@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="POC - Aplicación Embebida con Interfaz Frontend" />
+  <meta name="theme-color" content="#000000" />
+  <title>POC - Aplicación Embebida</title>
+  
+  <!-- Estilos -->
+  <link rel="stylesheet" href="/src/styles/main.css" />
+  <link rel="stylesheet" href="/src/styles/csv-integration.css" />
+</head>
+<body>
+  <!-- Contenedor de errores -->
+  <div id="error-container" style="display: none;"></div>
+
+  <!-- Contenedor principal -->
+  <main class="page" aria-label="Menú principal de la aplicación">
+    <div class="menu">
+      <!-- Sección: Máquina -->
+      <section class="section" aria-labelledby="maquina-title">
+        <h1 class="section-title" id="maquina-title">Máquina</h1>
+        <div class="button-grid three">
+          <button class="menu-button" type="button" data-action="machine.start">Inicio</button>
+          <button class="menu-button" type="button" data-action="machine.alarms">Alarmas</button>
+          <button class="menu-button" type="button" data-action="machine.info">Info</button>
+        </div>
+      </section>
+
+      <!-- Sección: Registros -->
+      <section class="section" aria-labelledby="registros-title">
+        <h2 class="section-title" id="registros-title">Registros</h2>
+        <div class="button-grid">
+          <button class="menu-button" type="button" data-action="records.products">Productos</button>
+          <button class="menu-button" type="button" data-action="records.recipes">Recetas</button>
+          <button class="menu-button" type="button" data-action="records.designs">Diseños</button>
+          <button class="menu-button" type="button" data-action="records.labels">Etiqueta</button>
+          <button class="menu-button" type="button" data-action="records.classification">Clasificación</button>
+          <button class="menu-button" type="button" data-action="records.printers">Impresoras</button>
+          <button class="menu-button" type="button" data-action="records.logs">Registros</button>
+        </div>
+      </section>
+
+      <!-- Sección: Configuraciones -->
+      <section class="section" aria-labelledby="configuraciones-title">
+        <h2 class="section-title" id="configuraciones-title">Configuraciones</h2>
+        <div class="button-grid">
+          <button class="menu-button" type="button" data-action="config.users">Usuarios</button>
+          <button class="menu-button" type="button" data-action="config.cutting">Corte</button>
+          <button class="menu-button" type="button" data-action="config.packaging">Embalaje</button>
+          <button class="menu-button" type="button" data-action="config.general">General</button>
+          <button class="menu-button" type="button" data-action="config.formats">Formatos</button>
+          <button class="menu-button" type="button" data-action="config.database">Base de datos</button>
+        </div>
+      </section>
+
+      <!-- Sección: Integraciones -->
+      <section class="section" aria-labelledby="integraciones-title">
+        <h2 class="section-title" id="integraciones-title">Integraciones</h2>
+        <div class="button-grid three">
+          <a class="menu-button" href="csv-integration.html" data-action="integration.csv">CSV</a>
+          <button class="menu-button" type="button" data-action="integration.api">API-RESP</button>
+          <button class="menu-button" type="button" data-action="integration.database">Database</button>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Scripts -->
+  <!-- Cargar configuración -->
+  <script src="/config/app-config.js"></script>
+  
+  <!-- Cargar utilidades -->
+  <script src="/src/js/utils.js"></script>
+  
+  <!-- Cargar módulos de seguridad -->
+  <script src="/src/js/credential-crypto.js"></script>
+  <script src="/src/js/app-local-secret.js"></script>
+  
+  <!-- Cargar módulo de persistencia -->
+  <script src="/config/config-persistence.mjs"></script>
+  
+  <!-- Cargar inicializador -->
+  <script src="/src/js/app-init.js"></script>
+  
+  <!-- Cargar lógica de menú -->
+  <script src="/src/js/menu-handler.js"></script>
+  
+  <!-- Cargar lógica específica del CSV -->
+  <script src="/src/js/csv-integration.js"></script>
+</body>
+</html>

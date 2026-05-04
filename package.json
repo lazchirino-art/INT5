@@ -1,0 +1,27 @@
+{
+  "name": "poc-embedded-app",
+  "version": "1.0.0",
+  "description": "POC - Aplicación Embebida con acceso a rutas SMB",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "smb",
+    "network",
+    "csv",
+    "embedded"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "smb2": "^0.2.9",
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.3"
+  },
+  "devDependencies": {}
+}

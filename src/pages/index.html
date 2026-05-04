@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Menú</title>
+  <style>
+    :root {
+      --bg: #000000;
+      --text: #ffffff;
+      --button-top: #1f5bff;
+      --button-bottom: #2445bd;
+      --button-hover-top: #2d69ff;
+      --button-hover-bottom: #2850d3;
+      --shadow: rgba(18, 69, 255, 0.26);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 3% 8%, rgba(105, 114, 130, 0.18) 0 22px, transparent 92px),
+        radial-gradient(circle at 95% 9%, rgba(183, 137, 105, 0.18) 0 34px, transparent 105px),
+        radial-gradient(circle at 70% 25%, rgba(65, 75, 78, 0.11) 0 28px, transparent 90px),
+        radial-gradient(circle at 4% 52%, rgba(60, 68, 71, 0.12) 0 42px, transparent 105px),
+        #000;
+      overflow-x: hidden;
+    }
+
+    .page {
+      width: min(100%, 1920px);
+      min-height: 900px;
+      margin: 0 auto;
+      position: relative;
+      padding: 154px 32px 90px;
+    }
+
+    .menu {
+      width: min(100%, 724px);
+      margin-left: calc(50% - 387px);
+    }
+
+    .section {
+      margin-bottom: 35px;
+    }
+
+    .section-title {
+      margin: 0 0 18px;
+      font-size: 26px;
+      line-height: 1.1;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+
+    .button-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 164px);
+      gap: 16px 14px;
+      align-items: center;
+    }
+
+    .button-grid.three {
+      grid-template-columns: repeat(3, 164px);
+    }
+
+    .menu-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 164px;
+      height: 74px;
+      border: 0;
+      border-radius: 36px;
+      color: #fff;
+      background: linear-gradient(180deg, var(--button-top), var(--button-bottom));
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        0 12px 30px var(--shadow);
+      font: 500 17px/1 "Segoe UI", Arial, Helvetica, sans-serif;
+      text-align: center;
+      text-decoration: none;
+      cursor: pointer;
+      transition: transform 160ms ease, background 160ms ease, box-shadow 160ms ease;
+      white-space: nowrap;
+    }
+
+    .menu-button:hover {
+      background: linear-gradient(180deg, var(--button-hover-top), var(--button-hover-bottom));
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.12),
+        0 14px 34px rgba(18, 69, 255, 0.34);
+      transform: translateY(-1px);
+    }
+
+    .menu-button:active {
+      transform: translateY(1px);
+    }
+
+    .menu-button:focus-visible {
+      outline: 3px solid rgba(255, 255, 255, 0.7);
+      outline-offset: 4px;
+    }
+
+    @media (max-width: 900px) {
+      .page {
+        min-height: 100vh;
+        padding: 70px 24px;
+      }
+
+      .menu {
+        width: min(100%, 520px);
+        margin: 0 auto;
+      }
+
+      .button-grid,
+      .button-grid.three {
+        grid-template-columns: repeat(2, minmax(142px, 1fr));
+        gap: 14px;
+      }
+
+      .menu-button {
+        width: 100%;
+      }
+    }
+
+    @media (max-width: 420px) {
+      .page {
+        padding: 42px 18px;
+      }
+
+      .section-title {
+        font-size: 24px;
+      }
+
+      .button-grid,
+      .button-grid.three {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page" aria-label="Menú principal">
+    <div class="menu">
+      <section class="section" aria-labelledby="maquina-title">
+        <h1 class="section-title" id="maquina-title">Máquina</h1>
+        <div class="button-grid three">
+          <button class="menu-button" type="button">Inicio</button>
+          <button class="menu-button" type="button">Alarmas</button>
+          <button class="menu-button" type="button">Info</button>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="registros-title">
+        <h2 class="section-title" id="registros-title">Registros</h2>
+        <div class="button-grid">
+          <button class="menu-button" type="button">Productos</button>
+          <button class="menu-button" type="button">Recetas</button>
+          <button class="menu-button" type="button">Diseños</button>
+          <button class="menu-button" type="button">Etiqueta</button>
+          <button class="menu-button" type="button">Clasificación</button>
+          <button class="menu-button" type="button">Impresoras</button>
+          <button class="menu-button" type="button">Registros</button>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="configuraciones-title">
+        <h2 class="section-title" id="configuraciones-title">Configuraciones</h2>
+        <div class="button-grid">
+          <button class="menu-button" type="button">Usuarios</button>
+          <button class="menu-button" type="button">Corte</button>
+          <button class="menu-button" type="button">Embalaje</button>
+          <button class="menu-button" type="button">General</button>
+          <button class="menu-button" type="button">Formatos</button>
+          <button class="menu-button" type="button">Base de datos</button>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="integraciones-title">
+        <h2 class="section-title" id="integraciones-title">Integraciones</h2>
+        <div class="button-grid three">
+          <a class="menu-button" href="pages/csv-integration.html">CSV</a>
+          <button class="menu-button" type="button">API-RESP</button>
+          <button class="menu-button" type="button">Database</button>
+        </div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

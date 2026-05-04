@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Integration Builder - CSV</title>
+<link rel="stylesheet" href="../styles/csv-integration.css">
+</head>
+
+<body>
+<div class="container">
+    <h1>CSV Integration Configuration</h1>
+
+    <div class="tabs">
+        <div class="tab active" onclick="openTab(0)">1. Connector</div>
+        <div class="tab" onclick="openTab(1)">2. Parser</div>
+        <div class="tab" onclick="openTab(2)">3. Mapping</div>
+        <div class="tab" onclick="openTab(3)">4. Validation</div>
+        <div class="tab" onclick="openTab(4)">5. Persistence</div>
+    </div>
+
+    <div class="tab-content active">
+        <h2>CSV Source Configuration</h2>
+
+        <div class="form-group">
+            <label>Connection Type</label>
+            <select id="connectionType" onchange="handleConnectionTypeChange()">
+                <option value="">Select connection type</option>
+                <option value="networkPath">Network Path</option>
+                <option value="sftp">SFTP</option>
+            </select>
+        </div>
+
+        <div class="connection-panel" id="networkPathFields">
+            <div class="form-group">
+                <label>Path *</label>
+                <input type="text" id="networkPath" placeholder="\\server\share\folder" required>
+            </div>
+
+            <div class="form-group">
+                <label>File Name Pattern *</label>
+                <input type="text" id="networkFileNamePattern" placeholder="medications_YYYYMMDD.csv" required>
+            </div>
+
+            <div class="form-group optional-field">
+                <label class="check-label">
+                    <input type="checkbox" id="useNetworkAuthentication" onchange="toggleAuthenticationFields()">
+                    Authentication
+                </label>
+                <input type="text" id="networkUsername" placeholder="username" disabled>
+            </div>
+
+            <div class="form-group optional-field">
+                <label>Password</label>
+                <input type="password" id="networkPassword" placeholder="password" disabled>
+            </div>
+
+            <div class="form-group optional-field">
+                <label class="check-label">
+                    <input type="checkbox" id="useNetworkDomain" onchange="toggleOptionalField('useNetworkDomain', 'networkDomain')">
+                    Domain
+                </label>
+                <input type="text" id="networkDomain" placeholder="DOMAIN" disabled>
+            </div>
+
+            <div class="connection-actions">
+                <button type="button" onclick="testNetworkConnection()">Test Connection</button>
+                <button class="save-config-button" type="button" onclick="saveCurrentConnectionConfig()" disabled>Save Configuration</button>
+            </div>
+        </div>
+
+        <div class="connection-panel" id="sftpFields">
+            <div class="form-group">
+                <label>Host *</label>
+                <input type="text" id="sftpHost" placeholder="sftp.client.com" required>
+            </div>
+
+            <div class="form-group">
+                <label>Port *</label>
+                <input type="number" id="sftpPort" value="22" min="1" max="65535" required>
+            </div>
+
+            <div class="form-group">
+                <label>Username *</label>
+                <input type="text" id="sftpUsername" placeholder="username" required>
+            </div>
+
+            <div class="form-group">
+                <label>Authentication Type *</label>
+                <select id="sftpAuthType" onchange="handleSftpAuthTypeChange()">
+                    <option value="password">Password</option>
+                    <option value="privateKey">Private Key</option>
+                </select>
+            </div>
+
+            <div class="form-group auth-field active" id="sftpPasswordGroup">
+                <label>Password *</label>
+                <input type="password" id="sftpPassword" placeholder="password">
+            </div>
+
+            <div class="form-group auth-field" id="sftpPrivateKeyGroup">
+                <label>Private Key *</label>
+                <textarea id="sftpPrivateKey" rows="7" placeholder="-----BEGIN PRIVATE KEY-----"></textarea>
+            </div>
+
+            <div class="form-group auth-field" id="sftpPassphraseGroup">
+                <label>Passphrase (optional)</label>
+                <input type="password" id="sftpPassphrase" placeholder="private key passphrase">
+            </div>
+
+            <div class="form-group">
+                <label>Remote Path *</label>
+                <input type="text" id="sftpRemotePath" placeholder="/incoming/files" required>
+            </div>
+
+            <div class="form-group">
+                <label>File Name Pattern *</label>
+                <input type="text" id="sftpFileNamePattern" placeholder="medications_YYYYMMDD.csv" required>
+            </div>
+
+            <div class="connection-actions">
+                <button type="button" onclick="testSftpConnection()">Test Connection</button>
+                <button class="save-config-button" type="button" onclick="saveCurrentConnectionConfig()" disabled>Save Configuration</button>
+            </div>
+        </div>
+
+        <div class="connection-log" id="connectionLog">
+            <h3>Connection Test Log</h3>
+            <div id="connectionLogLines" class="log-lines">
+                <p>Select a connection type and run a test.</p>
+            </div>
+            <div id="connectionStatus" class="connection-status">STATUS: NOT TESTED</div>
+            <div id="saveStatus" class="save-status">SAVE: NOT SAVED</div>
+        </div>
+    </div>
+
+    <div class="tab-content">
+        <h2>CSV Parsing Configuration</h2>
+
+        <div class="parser-layout">
+            <!-- Left Column: Inputs, Buttons, Preview -->
+            <div class="parser-left-column">
+                <!-- 1. Parser Inputs -->
+                <div class="parser-inputs">
+                    <div class="form-group">
+                        <label>Delimiter *</label>
+                        <select id="parserDelimiter" onchange="onParserInputChange()">
+                            <option value=",">,</option>
+                            <option value=";">;</option>
+                            <option value="|">|</option>
+                            <option value="	">Tab</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Has Header *</label>
+                        <select id="parserHasHeader" onchange="onParserInputChange()">
+                            <option value="Yes">Yes</option>
+                            <option value="No">No</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Quote Character</label>
+                        <input type="text" id="parserQuoteChar" value='"' maxlength="1" onchange="onParserInputChange()">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Escape Character</label>
+                        <input type="text" id="parserEscapeChar" value='"' maxlength="1" onchange="onParserInputChange()">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Date Format</label>
+                        <input type="text" id="parserDateFormat" placeholder="yyyy-MM-dd" onchange="onParserInputChange()">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Decimal Separator</label>
+                        <input type="text" id="parserDecimalSeparator" placeholder="." maxlength="1" onchange="onParserInputChange()">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Empty Value Representation</label>
+                        <input type="text" id="parserEmptyValue" placeholder="NULL, N/A, etc." onchange="onParserInputChange()">
+                    </div>
+                </div>
+
+                <!-- 3. Check & Save Buttons -->
+                <div class="parser-actions">
+                    <button type="button" id="checkConfigButton" onclick="ParserUI.checkParserConfiguration()" disabled>Check Configuration</button>
+                    <button type="button" id="saveParserButton" class="save-config-button" onclick="ParserUI.saveParserConfiguration()" disabled>Save Configuration</button>
+                </div>
+
+                <!-- 5. Preview Table -->
+                <div class="preview-section" id="previewSection" style="display: none;">
+                    <h3>Preview</h3>
+                    <table class="table" id="previewTable">
+                        <thead id="previewHead"></thead>
+                        <tbody id="previewBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Right Column: Columns Table and Validation Log -->
+            <div class="parser-right-column">
+                <!-- 2. Columns Table -->
+                <div class="columns-section">
+                    <h3>Expected Columns</h3>
+                    <table class="table" id="columnsTable">
+                        <thead>
+                            <tr>
+                                <th>Column Name</th>
+                                <th>Column Index</th>
+                                <th>Data Type</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="columnsBody">
+                        </tbody>
+                    </table>
+                    <button type="button" id="addColumnButton" onclick="ParserUI.addParserColumn()">Add Column</button>
+                </div>
+
+                <!-- 4. Validation Log -->
+                <div class="parser-log" id="parserLog">
+                    <h3>Validation Log</h3>
+                    <div id="parserLogLines" class="log-lines">
+                        <p>Not tested</p>
+                    </div>
+                    <div id="parserStatus" class="parser-status">STATUS: NOT TESTED</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="tab-content">
+        <h2>Mapping / Transformation</h2>
+
+        <table class="table" id="mappingTable">
+            <thead>
+                <tr>
+                    <th>Client Field</th>
+                    <th>System Field</th>
+                    <th>Transformation</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody id="mappingBody">
+                <tr>
+                    <td><input type="text" placeholder="drug_name"></td>
+                    <td><input type="text" placeholder="name"></td>
+                    <td><input type="text" placeholder="formatDate()"></td>
+                    <td><span class="delete-btn" onclick="removeRow(this)">x</span></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <button onclick="addMapping()">Add Mapping</button>
+    </div>
+
+    <div class="tab-content">
+        <h2>Validation Rules</h2>
+
+        <div class="form-group">
+            <label>Required Fields</label>
+            <input type="text" placeholder="name, expiration_date">
+        </div>
+
+        <div class="form-group">
+            <label>Date Format</label>
+            <input type="text" placeholder="YYYY-MM-DD">
+        </div>
+
+        <div class="form-group">
+            <label>On Error</label>
+            <select>
+                <option>Skip Record</option>
+                <option>Stop Process</option>
+                <option>Log Only</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="tab-content">
+        <h2>Persistence</h2>
+
+        <div class="form-group">
+            <label>Target Table</label>
+            <input type="text" placeholder="medications">
+        </div>
+
+        <div class="form-group">
+            <label>Mode</label>
+            <select>
+                <option>Insert Only</option>
+                <option>Upsert</option>
+                <option>Replace</option>
+            </select>
+        </div>
+    </div>
+</div>
+<script src="../js/app-local-secret.js"></script>
+<script src="../js/credential-crypto.js"></script>
+<script src="../js/network-path-client.js"></script>
+<script src="../js/config-loader.js"></script>
+<script src="../js/csv-parser.js"></script>
+<script src="../js/parser-ui.js"></script>
+<script src="../js/csv-integration.js"></script>
+</body>
+</html>

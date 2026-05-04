@@ -1,0 +1,13 @@
+{
+  "connection": {
+    "connectorType": "networkPath",
+    "type": "Network Path",
+    "path": "\\\\Desktop-ibfsjcq\\int5",
+    "fileNamePattern": "products*.csv",
+    "useAuthentication": false,
+    "username": "",
+    "password": "",
+    "useDomain": false,
+    "domain": ""
+  }
+}
