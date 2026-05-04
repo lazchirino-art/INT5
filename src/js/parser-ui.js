@@ -326,3 +326,55 @@ if (document.readyState === 'loading') {
 } else {
   ParserUI.init();
 }
+  // ==================== COLUMN MANAGEMENT ====================
+  /**
+   * Add new column row to table
+   */
+  static addParserColumn() {
+    const columnsBody = document.getElementById('columnsBody');
+    if (!columnsBody) return;
+
+    // Calculate next index based on current row count
+    const rowCount = columnsBody.querySelectorAll('tr').length;
+    const nextIndex = rowCount;
+
+    // Create new row
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td><input type="text" placeholder="Column name" /></td>
+      <td><input type="number" min="0" value="${nextIndex}" placeholder="Index" /></td>
+      <td><select>
+        <option value="String">String</option>
+        <option value="Number">Number</option>
+        <option value="Date">Date</option>
+      </select></td>
+      <td><span class="delete-btn" onclick="ParserUI.removeParserColumn(this)">✕</span></td>
+    `;
+    columnsBody.appendChild(row);
+
+    // Add listeners to update button state on input change
+    const inputs = row.querySelectorAll('input, select');
+    inputs.forEach(input => {
+      input.addEventListener('input', () => this.updateCheckButtonState());
+      input.addEventListener('change', () => this.updateCheckButtonState());
+    });
+
+    this.updateCheckButtonState();
+  }
+
+  /**
+   * Remove column row from table
+   */
+  static removeParserColumn(button) {
+    button.closest('tr').remove();
+    this.updateCheckButtonState();
+  }
+
+  /**
+   * Check if connector is ready
+   */
+  static isConnectorReady() {
+    const statusEl = document.getElementById('connectionStatus');
+    if (!statusEl) return false;
+    return statusEl.textContent.includes('READY');
+  }
