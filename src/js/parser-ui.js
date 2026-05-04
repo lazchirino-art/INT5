@@ -50,7 +50,7 @@ class ParserUI {
 
     const parserConfig = this.getParserConfig();
     const userColumns = this.getUserColumns();
-    const connectorConfig = this.getConnectorConfig();
+    const connectorConfig = await this.getConnectorConfig();
 
     // Validation: connector config exists
     if (!connectorConfig) {
@@ -99,128 +99,95 @@ class ParserUI {
       if (columnValidation.errors.length > 0) {
         finalLogs.push({
           type: 'error',
-          message: `Column mapping validation failed (${columnValidation.errors.length} errors)`
-        });
-
-        columnValidation.errors.forEach(error => {
-          finalLogs.push({
-            type: 'error',
-            message: error
-          });
-        });
-
-        result.status = 'FAILED';
-        this.parserState.status = 'FAILED';
-      }
-
-      // Add column validation warnings
-      if (columnValidation.warnings.length > 0) {
-        finalLogs.push({
-          type: 'warning',
-          message: `Column mapping warnings (${columnValidation.warnings.length})`
-        });
-
-        columnValidation.warnings.forEach(warning => {
-          finalLogs.push({
-            type: 'warning',
-            message: warning
-          });
+          message: 'Column validation failed: ' + columnValidation.errors.join(', ')
         });
       }
 
-      // Render results
+      // Render logs
       this.renderLogs(finalLogs);
       this.updateStatusDisplay(result.status);
 
-      // Debug logging
-      console.log('[ParserUI] Result:', result);
-      console.log('[ParserUI] Preview:', result.preview);
-      console.log('[ParserUI] FileColumnNames:', result.fileColumnNames);
-      console.log('[ParserUI] UserColumns:', userColumns);
-      console.log('[ParserUI] ColumnValidation:', columnValidation);
-
-      // Show preview and enable save if no column errors
-      if (columnValidation.errors.length === 0) {
-        if (saveButton) {
-          saveButton.disabled = false;
-        }
-        if (result.preview && result.preview.length > 0) {
-          this.showPreview(result.preview, userColumns);
-        }
-      } else {
-        // Hide preview if there are column errors
-        const previewSection = document.getElementById('previewSection');
-        if (previewSection) {
-          previewSection.style.display = 'none';
-        }
-        if (saveButton) {
-          saveButton.disabled = true;
-        }
-      }
+      console.log('[ParserUI] Configuration check completed:', result.status);
     } catch (error) {
-      console.error('[ParserUI] Error:', error);
-      this.showError(`Unexpected error: ${error.message}`);
+      console.error('[ParserUI] Error checking configuration:', error);
+      this.showError('Error: ' + error.message);
       this.parserState.status = 'FAILED';
       this.updateStatusDisplay('FAILED');
+    } finally {
+      if (saveButton) {
+        saveButton.disabled = false;
+      }
     }
   }
 
-  // ==================== VALIDATION ====================
+  // ==================== CONFIGURATION SAVING ====================
   /**
-   * Validate user columns against file columns
-   * Checks that configured column indices exist in the file
+   * Save parser configuration to backend
    */
-  static validateUserColumnsAgainstFile(userColumns, fileColumns) {
-    const errors = [];
-    const warnings = [];
+  static async saveParserConfiguration() {
+    console.log('[ParserUI] Saving configuration...');
 
-    userColumns.forEach((userCol) => {
-      const colIndex = parseInt(userCol.index);
+    try {
+      const config = {
+        parser: this.getParserConfig(),
+        columns: this.getUserColumns()
+      };
 
-      // Check if index is valid
-      if (isNaN(colIndex) || colIndex < 0 || colIndex >= fileColumns.length) {
-        errors.push(
-          `❌ Column "${userCol.name}":\n   Expected index: ${colIndex}\n   Found: "${fileColumns[colIndex] || 'OUT OF RANGE'}"`
-        );
-        return;
+      const response = await fetch('/api/config/save', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(config)
+      });
+
+      if (response.ok) {
+        console.log('[ParserUI] Configuration saved successfully');
+        this.showSuccess('Configuration saved');
+      } else {
+        console.error('[ParserUI] Failed to save configuration');
+        this.showError('Failed to save configuration');
       }
-
-      // Check if column name matches (error if mismatch)
-      const fileColumnName = fileColumns[colIndex];
-      if (userCol.name.toLowerCase() !== fileColumnName.toLowerCase()) {
-        errors.push(
-          `Column "${userCol.name}" at index ${colIndex}: file has "${fileColumnName}"`
-        );
-      }
-    });
-
-    return { errors, warnings };
+    } catch (error) {
+      console.error('[ParserUI] Error saving configuration:', error);
+      this.showError('Error: ' + error.message);
+    }
   }
 
-  // ==================== DATA RETRIEVAL ====================
+  // ==================== CONFIGURATION RETRIEVAL ====================
   /**
-   * Get user-configured columns from table
+   * Get parser configuration from form inputs
+   */
+  static getParserConfig() {
+    return {
+      delimiter: document.getElementById('parserDelimiter')?.value || ',',
+      hasHeader: document.getElementById('parserHasHeader')?.value === 'Yes',
+      quoteChar: document.getElementById('parserQuoteChar')?.value || '"',
+      escapeChar: document.getElementById('parserEscapeChar')?.value || '"',
+      dateFormat: document.getElementById('parserDateFormat')?.value || 'yyyy-MM-dd',
+      decimalSeparator: document.getElementById('parserDecimalSeparator')?.value || '.',
+      emptyValueRepresentation: document.getElementById('parserEmptyValue')?.value || 'NULL'
+    };
+  }
+
+  /**
+   * Get user-defined columns from table
    */
   static getUserColumns() {
-    const columnsBody = document.getElementById('columnsBody');
-    if (!columnsBody) return [];
-
+    const rows = document.querySelectorAll('#columnsTable tbody tr');
     const columns = [];
-    columnsBody.querySelectorAll('tr').forEach(tr => {
-      const inputs = tr.querySelectorAll('input, select');
-      if (inputs.length >= 3) {
-        const name = inputs[0].value.trim();
-        const index = inputs[1].value.trim();
-        const dataType = inputs[2].value;
 
-        // Only add if name and index are provided
-        if (name && index !== '') {
-          columns.push({
-            name: name,
-            index: parseInt(index),
-            dataType: dataType
-          });
-        }
+    rows.forEach(row => {
+      const nameInput = row.querySelector('input[placeholder="Column name"]');
+      const indexInput = row.querySelector('input[placeholder="Column index"]');
+      const typeSelect = row.querySelector('select');
+
+      if (nameInput?.value) {
+        columns.push({
+          name: nameInput.value,
+          index: indexInput?.value || '',
+          type: typeSelect?.value || 'string'
+        });
       }
     });
 
@@ -228,35 +195,52 @@ class ParserUI {
   }
 
   /**
-   * Get parser configuration from form inputs
+   * Get connector configuration from backend API
    */
-  static getParserConfig() {
-    return {
-      delimiter: document.getElementById('parserDelimiter')?.value || ',',
-      hasHeader: document.getElementById('parserHasHeader')?.value || 'Yes',
-      quoteChar: document.getElementById('parserQuoteChar')?.value || '"',
-      escapeChar: document.getElementById('parserEscapeChar')?.value || '"',
-      dateFormat: document.getElementById('parserDateFormat')?.value || '',
-      decimalSeparator: document.getElementById('parserDecimalSeparator')?.value || '',
-      emptyValue: document.getElementById('parserEmptyValue')?.value || '',
-      columns: this.getUserColumns()
-    };
-  }
-
-  /**
-   * Get connector configuration from localStorage
-   */
-  static getConnectorConfig() {
+  static async getConnectorConfig() {
     try {
-      const stored = localStorage.getItem('menuCsvInt.connectionConfig');
-      if (!stored) return null;
+      const response = await fetch('/api/config/load');
+      if (!response.ok) {
+        console.error('[ParserUI] Failed to load config from backend');
+        return null;
+      }
 
-      const config = JSON.parse(stored);
-      return config.connection;
+      const data = await response.json();
+      if (data.status === 'SUCCESS' && data.config?.connection) {
+        console.log('[ParserUI] Connector config loaded from backend:', data.config.connection);
+        return data.config.connection;
+      }
+      return null;
     } catch (error) {
       console.error('[ParserUI] Error loading connector config:', error);
       return null;
     }
+  }
+
+  // ==================== VALIDATION ====================
+  /**
+   * Validate user columns against file structure
+   */
+  static validateUserColumnsAgainstFile(userColumns, fileColumnNames) {
+    const errors = [];
+
+    userColumns.forEach(userCol => {
+      if (userCol.index && !fileColumnNames.includes(userCol.index)) {
+        errors.push(`Column "${userCol.name}" not found in file`);
+      }
+    });
+
+    return { errors };
+  }
+
+  /**
+   * Reset parser state
+   */
+  static resetParserState() {
+    this.parserState.status = 'NOT_TESTED';
+    this.parserState.errors = [];
+    this.parserState.warnings = [];
+    this.updateStatusDisplay('TESTED');
   }
 
   // ==================== UI RENDERING ====================
@@ -289,216 +273,56 @@ class ParserUI {
    * Update status display
    */
   static updateStatusDisplay(status) {
-    const statusDiv = document.getElementById('parserStatus');
-    if (!statusDiv) return;
-
-    let displayStatus = status;
-    if (status === 'NOT_TESTED') displayStatus = 'NOT TESTED';
-    else if (status === 'TESTING') displayStatus = 'TESTING...';
-
-    statusDiv.textContent = `STATUS: ${displayStatus}`;
-    statusDiv.className = `parser-status ${status.toLowerCase()}`;
-  }
-
-  /**
-   * Show error message in log
-   */
-  static showError(message) {
-    const logLines = document.getElementById('parserLogLines');
-    if (!logLines) return;
-
-    logLines.innerHTML = '';
-    const line = document.createElement('div');
-    line.className = 'log-line log-error';
-    line.innerHTML = `<span class="log-icon">❌</span><span class="log-message">${message}</span>`;
-    logLines.appendChild(line);
-  }
-
-  /**
-   * Show preview table with data
-   * Only shows configured columns and limits to 5 rows
-   */
-  static showPreview(preview, userColumns) {
-    const previewSection = document.getElementById('previewSection');
-    if (!previewSection) return;
-
-    // Only show if there are user columns configured
-    if (!userColumns || userColumns.length === 0) {
-      previewSection.style.display = 'none';
-      return;
+    const statusEl = document.getElementById('parserStatus');
+    if (statusEl) {
+      statusEl.textContent = `STATUS: ${status}`;
+      statusEl.className = `connection-status ${status.toLowerCase()}`;
     }
-
-    if (!preview || preview.length === 0) {
-      previewSection.style.display = 'none';
-      return;
-    }
-
-    previewSection.style.display = 'block';
-
-    const table = document.getElementById('previewTable');
-    if (!table) return;
-
-    table.innerHTML = '';
-
-    // Create header with only configured columns
-    const thead = document.createElement('thead');
-    const headerRow = document.createElement('tr');
-    userColumns.forEach(col => {
-      const th = document.createElement('th');
-      th.textContent = col.name;
-      headerRow.appendChild(th);
-    });
-    thead.appendChild(headerRow);
-    table.appendChild(thead);
-
-    // Create body with only first 5 rows and configured columns
-    const tbody = document.createElement('tbody');
-    const maxRows = Math.min(5, preview.length);
-    for (let i = 0; i < maxRows; i++) {
-      const row = preview[i];
-      const tr = document.createElement('tr');
-      userColumns.forEach(col => {
-        const td = document.createElement('td');
-        td.textContent = row[col.name] || '';
-        tr.appendChild(td);
-      });
-      tbody.appendChild(tr);
-    }
-    table.appendChild(tbody);
-  }
-
-
-  // ==================== PERSISTENCE ====================
-  /**
-   * Save parser configuration to localStorage
-   */
-  static saveParserConfiguration() {
-    if (this.parserState.status !== 'VALID') {
-      alert('Configuration is not valid');
-      return;
-    }
-
-    const config = {
-      parser: {
-        ...this.getParserConfig(),
-        columns: this.getUserColumns()
-      }
-    };
-
-    localStorage.setItem('menuCsvInt.parserConfig', JSON.stringify(config));
-    alert('Parser configuration saved');
-  }
-
-  // ==================== COLUMN MANAGEMENT ====================
-  /**
-   * Add new column row to table
-   */
-  static addParserColumn() {
-    const columnsBody = document.getElementById('columnsBody');
-    if (!columnsBody) return;
-
-    // Calculate next index based on current row count
-    const rowCount = columnsBody.querySelectorAll('tr').length;
-    const nextIndex = rowCount;
-
-    // Create new row
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td><input type="text" placeholder="Column name" /></td>
-      <td><input type="number" min="0" value="${nextIndex}" placeholder="Index" /></td>
-      <td><select>
-        <option value="String">String</option>
-        <option value="Number">Number</option>
-        <option value="Date">Date</option>
-      </select></td>
-      <td><span class="delete-btn" onclick="ParserUI.removeParserColumn(this)">✖</span></td>
-    `;
-    columnsBody.appendChild(row);
-
-    // Add listeners to update button state on input change
-    const inputs = row.querySelectorAll('input, select');
-    inputs.forEach(input => {
-      input.addEventListener('input', () => this.updateCheckButtonState());
-      input.addEventListener('change', () => this.updateCheckButtonState());
-    });
-
-    this.updateCheckButtonState();
   }
 
   /**
-   * Remove column row from table
-   */
-  static removeParserColumn(button) {
-    button.closest('tr').remove();
-    this.updateCheckButtonState();
-  }
-
-  // ==================== BUTTON STATE ====================
-  /**
-   * Update check button enabled/disabled state
-   * Button is enabled only if connector is ready AND at least one column exists
+   * Update check button state
    */
   static updateCheckButtonState() {
     const checkButton = document.getElementById('checkConfigButton');
-    if (!checkButton) return;
-
-    const isConnectorReady = this.isConnectorReady();
-    const hasColumns = this.getUserColumns().length > 0;
-
-    checkButton.disabled = !(isConnectorReady && hasColumns);
+    if (checkButton) {
+      const hasColumns = this.getUserColumns().length > 0;
+      checkButton.disabled = !hasColumns;
+    }
   }
 
   /**
-   * Check if connector configuration is ready
+   * Show error message
    */
-  static isConnectorReady() {
-    const statusDiv = document.getElementById('connectionStatus');
-    const saveDiv = document.getElementById('saveStatus');
-
-    if (!statusDiv || !saveDiv) return false;
-
-    const statusText = statusDiv.textContent;
-    const saveText = saveDiv.textContent;
-
-    return statusText.includes('READY') && saveText.includes('SAVED');
-  }
-
-  // ==================== STATE MANAGEMENT ====================
-  /**
-   * Reset parser state when inputs change
-   */
-  static resetParserState() {
-    this.parserState.status = 'NOT_TESTED';
-    this.parserState.errors = [];
-    this.parserState.warnings = [];
-
-    this.updateStatusDisplay('NOT_TESTED');
-
-    // Clear logs
+  static showError(message) {
+    console.error('[ParserUI]', message);
     const logLines = document.getElementById('parserLogLines');
     if (logLines) {
-      logLines.innerHTML = '';
+      const errorLine = document.createElement('div');
+      errorLine.className = 'log-line log-error';
+      errorLine.innerHTML = `<span class="log-icon">❌</span><span class="log-message">${message}</span>`;
+      logLines.appendChild(errorLine);
     }
+  }
 
-    // Hide preview
-    const previewSection = document.getElementById('previewSection');
-    if (previewSection) {
-      previewSection.style.display = 'none';
-    }
-
-    // Disable save button
-    const saveButton = document.getElementById('saveParserButton');
-    if (saveButton) {
-      saveButton.disabled = true;
+  /**
+   * Show success message
+   */
+  static showSuccess(message) {
+    console.log('[ParserUI]', message);
+    const logLines = document.getElementById('parserLogLines');
+    if (logLines) {
+      const successLine = document.createElement('div');
+      successLine.className = 'log-line log-success';
+      successLine.innerHTML = `<span class="log-icon">✔</span><span class="log-message">${message}</span>`;
+      logLines.appendChild(successLine);
     }
   }
 }
 
-// ==================== INITIALIZATION ====================
 // Initialize when DOM is ready
-document.addEventListener('DOMContentLoaded', () => {
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => ParserUI.init());
+} else {
   ParserUI.init();
-});
-
-// Export to global scope
-window.ParserUI = ParserUI;
+}
