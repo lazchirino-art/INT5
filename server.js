@@ -74,9 +74,7 @@ app.post('/api/config/save', (req, res) => {
     }
 
     // Guardar configuración en archivo
-    writeFileSync(CONFIG_FILE, JSON.stringify({
-	  connection: config
-	}, null, 2));
+    writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
 		
     console.log('[CONFIG] Configuration saved successfully');
     res.json({ 

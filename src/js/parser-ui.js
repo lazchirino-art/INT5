@@ -244,15 +244,22 @@ class ParserUI {
   }
 
   /**
-   * Get connector configuration from localStorage
+   * Get connector configuration from backend API
    */
-  static getConnectorConfig() {
+  static async getConnectorConfig() {
     try {
-      const stored = localStorage.getItem('menuCsvInt.connectionConfig');
-      if (!stored) return null;
+      const response = await fetch('/api/config/load');
+      if (!response.ok) {
+        console.error('[ParserUI] Failed to load config from backend');
+        return null;
+      }
 
-      const config = JSON.parse(stored);
-      return config.connection;
+      const data = await response.json();
+      if (data.status === 'SUCCESS' && data.config?.connection) {
+        console.log('[ParserUI] Connector config loaded from backend:', data.config.connection);
+        return data.config.connection;
+      }
+      return null;
     } catch (error) {
       console.error('[ParserUI] Error loading connector config:', error);
       return null;
