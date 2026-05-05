@@ -241,8 +241,9 @@ class NetworkPathHandlerWindows {
 
       if (username && password) {
         // Use net use to mount the share, then read the file
+        // Silence net use output completely to avoid mixing with file content
         const credFormat = domain ? `${domain}\\${username}` : username;
-        command = `cmd /c "net use ${path} /delete /y 2>nul & net use ${path} /user:${credFormat} ${password} && type "${fullPath}""`;;
+        command = `cmd /c "net use ${path} /delete /y >nul 2>&1 & net use ${path} /user:${credFormat} ${password} >nul 2>&1 & type \"${fullPath}\""`;
         this.addLog(`Mounting share with credentials: ${credFormat}`);
       } else {
         // Read file without credentials
@@ -251,7 +252,7 @@ class NetworkPathHandlerWindows {
 
       const { stdout, stderr } = await execAsync(command, { maxBuffer: 50 * 1024 * 1024 });
 
-      if (stderr && !stderr.includes('The command completed successfully')) {
+      if (stderr && stderr.trim()) {
         this.addLog(`Warning: ${stderr}`);
       }
 
