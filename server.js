@@ -279,7 +279,7 @@ app.post('/api/connector/read-file', async (req, res) => {
     });
 
     if (detectResult.status !== 'READY' || !detectResult.file) {
-      return res.status(400).json({ error: 'File not found', logs: detectResult.logs });
+      return res.status(400).json({ error: { message: 'File not found' }, logs: detectResult.logs });
     }
 
     const fileContent = await handler.readFile({
@@ -291,7 +291,7 @@ app.post('/api/connector/read-file', async (req, res) => {
     });
 
     if (!fileContent) {
-      return res.status(400).json({ error: 'Failed to read file' });
+      return res.status(400).json({ error: { message: 'Failed to read file' } });
     }
 
     res.json({ content: fileContent, filename: detectResult.file, size: fileContent.length, encoding: 'UTF-8' });
