@@ -379,7 +379,7 @@ class ParserUI {
   /**
    * Save parser configuration to localStorage
    */
-  static saveParserConfiguration() {
+  static async saveParserConfiguration() {
     if (this.parserState.status !== 'VALID') {
       alert('Configuration is not valid');
       return;
@@ -392,8 +392,32 @@ class ParserUI {
       }
     };
 
-    localStorage.setItem('menuCsvInt.parserConfig', JSON.stringify(config));
-    alert('Parser configuration saved');
+    try {
+      console.log('[ParserUI] Saving parser configuration to backend...', config);
+      
+      // Save to backend (config/app-config.json)
+      const response = await fetch('/api/config/save', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(config)
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        console.log('[ParserUI] Parser configuration saved successfully');
+        alert('Parser configuration saved successfully');
+        
+        // Also save to localStorage for offline access (optional)
+        localStorage.setItem('menuCsvInt.parserConfig', JSON.stringify(config));
+      } else {
+        console.error('[ParserUI] Error saving configuration:', result.error);
+        alert('Error saving configuration: ' + result.error);
+      }
+    } catch (error) {
+      console.error('[ParserUI] Error saving configuration:', error);
+      alert('Error saving configuration: ' + error.message);
+    }
   }
 
   // ==================== COLUMN MANAGEMENT ====================

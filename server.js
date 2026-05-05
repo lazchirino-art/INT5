@@ -69,25 +69,51 @@ app.use(express.static(join(__dirname, 'src')));
  */
 app.post('/api/config/save', (req, res) => {
   try {
-    const config = req.body;
+    const newConfig = req.body;
     
-    if (!config) {
+    if (!newConfig) {
       return res.status(400).json({ error: 'No configuration provided' });
     }
 
+    // Load existing configuration if it exists
+    let existingConfig = {};
+    if (existsSync(CONFIG_FILE)) {
+      try {
+        const configData = readFileSync(CONFIG_FILE, 'utf-8');
+        existingConfig = JSON.parse(configData);
+      } catch (e) {
+        console.warn('[CONFIG] Could not load existing config, starting fresh');
+      }
+    }
+
+    // Merge configurations
+    // If newConfig has 'connection', it's from Connector tab
+    // If newConfig has 'parser', it's from Parser tab
+    const mergedConfig = {
+      connection: newConfig.connection || existingConfig.connection || {},
+      parser: newConfig.parser || existingConfig.parser || {}
+    };
+
+    console.log('[CONFIG] Saving configuration...');
+    console.log('[CONFIG] Connection:', mergedConfig.connection);
+    console.log('[CONFIG] Parser:', mergedConfig.parser);
+
     // Guardar configuración en archivo
-    writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
-		
+    writeFileSync(CONFIG_FILE, JSON.stringify(mergedConfig, null, 2));
+
     console.log('[CONFIG] Configuration saved successfully');
     res.json({ 
       status: 'SUCCESS', 
+      success: true,
       message: 'Configuration saved',
-      path: CONFIG_FILE
+      path: CONFIG_FILE,
+      config: mergedConfig
     });
   } catch (error) {
     console.error('[CONFIG ERROR]', error.message);
     res.status(500).json({ 
       status: 'FAILED', 
+      success: false,
       error: error.message 
     });
   }
