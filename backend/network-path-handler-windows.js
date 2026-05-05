@@ -237,24 +237,23 @@ class NetworkPathHandlerWindows {
 
       this.addLog(`Reading file: ${fullPath}`);
 
-      let psCommand = `Get-Content -Path '${fullPath}' -Raw -Encoding UTF8`;
+      let command = '';
 
       if (username && password) {
-        const secPassword = `ConvertTo-SecureString '${password}' -AsPlainText -Force`;
+        // Use net use to mount the share, then read the file
         const credFormat = domain ? `${domain}\\${username}` : username;
-        const cred = `New-Object System.Management.Automation.PSCredential('${credFormat}', (${secPassword}))`;
-        psCommand = `$cred = ${cred}; Get-Content -Path '${fullPath}' -Raw -Encoding UTF8 -Credential $cred`;
+        command = `cmd /c "net use ${path} /delete /y 2>nul & net use ${path} /user:${credFormat} ${password} && type "${fullPath}""`;;
+        this.addLog(`Mounting share with credentials: ${credFormat}`);
+      } else {
+        // Read file without credentials
+        command = `cmd /c type "${fullPath}"`;
       }
 
-      const { stdout, stderr } = await execAsync(`powershell -Command "${psCommand}"`);
+      const { stdout, stderr } = await execAsync(command, { maxBuffer: 50 * 1024 * 1024 });
 
-      if (stderr) {
-		  if (stderr.includes('2250')) {
-			this.addLog('Info: No previous connection to delete');
-		  } else {
-			throw new Error(stderr);
-		  }
-		}
+      if (stderr && !stderr.includes('The command completed successfully')) {
+        this.addLog(`Warning: ${stderr}`);
+      }
 
       this.addLog(`File read successfully: ${filename}`);
       return stdout;
