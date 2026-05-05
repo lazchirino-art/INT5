@@ -3,12 +3,13 @@
 ## 📋 Tabla de Contenidos
 
 1. [Resumen de Cambios](#resumen-de-cambios)
-2. [Nuevos Archivos](#nuevos-archivos)
-3. [Funciones CSV Utilities](#funciones-csv-utilities)
-4. [Endpoints de Producción](#endpoints-de-producción)
-5. [Ejemplos de Uso](#ejemplos-de-uso)
-6. [Testing](#testing)
-7. [Optimizaciones](#optimizaciones)
+2. [Flujo de Credenciales](#flujo-de-credenciales)
+3. [Nuevos Archivos](#nuevos-archivos)
+4. [Funciones CSV Utilities](#funciones-csv-utilities)
+5. [Endpoints de Producción](#endpoints-de-producción)
+6. [Ejemplos de Uso](#ejemplos-de-uso)
+7. [Testing](#testing)
+8. [Optimizaciones](#optimizaciones)
 
 ---
 
@@ -32,6 +33,204 @@
 - **Endpoints nuevos**: 6
 - **Líneas de código**: 1,241 nuevas
 - **Tiempo de implementación**: Listo para producción
+
+---
+
+## Flujo de Credenciales
+
+### Arquitectura de Dos Fases
+
+#### Fase 1: CONFIGURACIÓN Y TESTING
+
+```
+┌─────────────────────────────────────────────────────┐
+│ FASE 1: CONFIGURACIÓN Y TESTING                     │
+├─────────────────────────────────────────────────────┤
+│                                                     │
+│ 1. Usuario ingresa credenciales (texto plano)      │
+│    └─ Username: "client"                           │
+│    └─ Password: "client123"                        │
+│                                                     │
+│ 2. Frontend encripta con AES-GCM                   │
+│    └─ Password: "enc:v1:aes-gcm:..."               │
+│                                                     │
+│ 3. Backend recibe credenciales encriptadas         │
+│    └─ POST /test-connection                        │
+│    └─ POST /api/connector/read-file                │
+│                                                     │
+│ 4. Backend desencripta para testing                │
+│    └─ Usa CredentialCrypto                         │
+│    └─ Verifica conexión                            │
+│    └─ Lee archivo                                  │
+│                                                     │
+│ 5. Backend guarda configuración                    │
+│    └─ POST /api/config/save                        │
+│    └─ Guarda en config/app-config.json             │
+│    └─ Credenciales ENCRIPTADAS                     │
+│    └─ Delimitador detectado                        │
+│    └─ Nombres de columnas                          │
+│                                                     │
+│ Resultado: config/app-config.json                  │
+│ {                                                   │
+│   "connection": {                                   │
+│     "path": "\\\\server\\share",                      │
+│     "username": "client",                           │
+│     "password": "enc:v1:aes-gcm:...",              │
+│     "filename": "w.csv"                             │
+│   },                                                │
+│   "parser": {                                       │
+│     "delimiter": ",",                               │
+│     "hasHeader": true,                              │
+│     "columnNames": ["MedicationName", "Code", ...] │
+│   }                                                 │
+│ }                                                   │
+│                                                     │
+└─────────────────────────────────────────────────────┘
+```
+
+#### Fase 2: PRODUCCIÓN
+
+```
+┌─────────────────────────────────────────────────────┐
+│ FASE 2: PRODUCCIÓN (BÚSQUEDA)                       │
+├─────────────────────────────────────────────────────┤
+│                                                     │
+│ 1. Aplicación externa solicita búsqueda            │
+│    └─ POST /api/product/search                     │
+│    └─ {"productId": "ASP001", ...}                 │
+│                                                     │
+│ 2. Backend carga configuración guardada            │
+│    └─ Lee config/app-config.json                   │
+│    └─ Extrae credenciales ENCRIPTADAS              │
+│    └─ Extrae configuración de parser               │
+│                                                     │
+│ 3. Backend desencripta credenciales                │
+│    └─ Lee ENCRYPTION_SECRET de .env                │
+│    └─ Desencripta password con CredentialCrypto    │
+│    └─ Obtiene: "client123"                         │
+│                                                     │
+│ 4. Backend accede a SMB                            │
+│    └─ Usa credenciales desencriptadas              │
+│    └─ Lee archivo completo                         │
+│                                                     │
+│ 5. Backend parsea CSV                              │
+│    └─ Usa delimitador guardado (",")               │
+│    └─ Usa hasHeader guardado (true)                │
+│    └─ Crea array de filas                          │
+│                                                     │
+│ 6. Backend busca producto                          │
+│    └─ Busca en columnas guardadas                  │
+│    └─ Retorna fila completa                        │
+│                                                     │
+│ 7. Retorna resultado JSON                          │
+│    └─ {"found": true, "product": {...}}            │
+│                                                     │
+└─────────────────────────────────────────────────────┘
+```
+
+### Flujo de Desencriptación en Producción
+
+```javascript
+// En cada endpoint de producción (/api/product/search, etc.)
+
+// 1. Cargar configuración guardada
+const configData = readFileSync(CONFIG_FILE, 'utf-8');
+const config = JSON.parse(configData);
+const connectorConfig = config.connection;  // Credenciales encriptadas
+const parserConfig = config.parser;         // Configuración guardada
+
+// 2. Inicializar CredentialCrypto
+let credentialCrypto = null;
+if (process.env.ENCRYPTION_SECRET) {
+  credentialCrypto = new CredentialCrypto(process.env.ENCRYPTION_SECRET);
+}
+
+// 3. Desencriptar contraseña
+let password = connectorConfig.password;  // "enc:v1:aes-gcm:..."
+if (credentialCrypto && password) {
+  try {
+    password = await credentialCrypto.decrypt(password);  // "client123"
+  } catch (error) {
+    console.error('Decryption error:', error.message);
+    password = connectorConfig.password;  // Fallback
+  }
+}
+
+// 4. Usar credenciales desencriptadas para acceder a SMB
+const fileContent = await handler.readFile({
+  path: connectorConfig.path,
+  filename: connectorConfig.filename,
+  username: connectorConfig.username,
+  password: password,  // ← Desencriptada
+  domain: connectorConfig.domain
+});
+
+// 5. Parsear con configuración guardada
+const rows = csvUtils.parseCSVContent(
+  fileContent,
+  parserConfig.delimiter,      // ← Guardada en config
+  parserConfig.hasHeader,       // ← Guardada en config
+  parserConfig.quoteChar,       // ← Guardada en config
+  parserConfig.escapeChar       // ← Guardada en config
+);
+
+// 6. Buscar usando columnas guardadas
+const result = csvUtils.searchProductInRows(
+  rows,
+  productId,
+  searchColumnIndex,
+  parserConfig.columnNames      // ← Guardadas en config
+);
+```
+
+### Seguridad
+
+**Principios de seguridad implementados**:
+
+1. ✅ **Credenciales nunca en texto plano**
+   - Se encriptan en frontend
+   - Se guardan encriptadas en config.json
+   - Se desencriptan solo cuando se necesitan
+   - Nunca se loguean
+
+2. ✅ **ENCRYPTION_SECRET en variable de entorno**
+   - No en el código
+   - No en el repositorio
+   - Solo en `backend/.env` (local)
+   - Diferente por entorno
+
+3. ✅ **Desencriptación solo en backend**
+   - Frontend nunca ve la contraseña desencriptada
+   - Backend maneja toda la criptografía
+   - Credenciales desencriptadas solo en memoria
+
+4. ✅ **Manejo de errores**
+   - Si desencriptación falla, se usa fallback
+   - Se loguea el error (sin credenciales)
+   - No se exponen detalles de criptografía
+
+### Checklist de Producción
+
+```
+✅ Configuración guardada en config/app-config.json
+✅ Credenciales encriptadas en config.json
+✅ ENCRYPTION_SECRET en backend/.env
+✅ ENCRYPTION_SECRET diferente en cada entorno
+✅ Delimitador guardado en config.json
+✅ Nombres de columnas guardados
+✅ Índices de columnas guardados
+✅ config.json NO en .gitignore (está encriptado)
+✅ backend/.env EN .gitignore (contiene secreto)
+
+Cuando se llama a /api/product/search:
+✅ Carga config.json
+✅ Extrae credenciales encriptadas
+✅ Desencripta con ENCRYPTION_SECRET
+✅ Lee archivo con credenciales desencriptadas
+✅ Parsea con delimitador guardado
+✅ Busca en columnas guardadas
+✅ Retorna resultado
+```
 
 ---
 
@@ -95,264 +294,20 @@ const rows = csvUtils.parseCSVContent(
 
 ---
 
-### 3. extractHeader()
+### 3-13. Otras funciones
 
-Extrae la fila de encabezado.
-
-```javascript
-const header = csvUtils.extractHeader(csvContent, ',', '"', '"');
-// Resultado: ['MedicationName', 'Code', 'Dosage', ...]
-```
-
----
-
-### 4. rowToObject()
-
-Convierte array de fila a objeto usando nombres de columnas.
-
-```javascript
-const row = ['Aspirin', 'ASP001', '500mg'];
-const columnNames = ['MedicationName', 'Code', 'Dosage'];
-
-const obj = csvUtils.rowToObject(row, columnNames);
-// Resultado:
-// {
-//   MedicationName: 'Aspirin',
-//   Code: 'ASP001',
-//   Dosage: '500mg'
-// }
-```
-
----
-
-### 5. searchProductInRows()
-
-Busca un producto por identificador (O(n)).
-
-```javascript
-/**
- * @param {Array<Array<string>>} rows - Filas parseadas
- * @param {string} productId - ID a buscar
- * @param {number} searchColumnIndex - Índice de columna
- * @param {Array<string>} columnNames - Nombres de columnas
- * @returns {Object} Resultado de búsqueda
- */
-const result = csvUtils.searchProductInRows(
-  rows,
-  'ASP001',
-  1,
-  columnNames
-);
-
-// Resultado:
-// {
-//   found: true,
-//   product: {
-//     MedicationName: 'Aspirin',
-//     Code: 'ASP001',
-//     Dosage: '500mg',
-//     ...
-//   },
-//   rowIndex: 42,
-//   totalRows: 131,
-//   searchTime: 245
-// }
-```
-
----
-
-### 6. searchProductAdvanced()
-
-Búsqueda avanzada con múltiples criterios.
-
-```javascript
-/**
- * @param {Array<Array<string>>} rows - Filas parseadas
- * @param {Object} searchCriteria - Criterios de búsqueda
- * @param {Array<string>} columnNames - Nombres de columnas
- * @returns {Object} Resultados
- */
-const result = csvUtils.searchProductAdvanced(
-  rows,
-  {
-    columnName: 'MedicationName',
-    value: 'Aspirin',
-    exact: false,
-    caseSensitive: false
-  },
-  columnNames
-);
-
-// Resultado:
-// {
-//   found: true,
-//   results: [
-//     {
-//       product: {...},
-//       rowIndex: 42
-//     },
-//     {
-//       product: {...},
-//       rowIndex: 43
-//     }
-//   ],
-//   totalFound: 2,
-//   searchTime: 156
-// }
-```
-
----
-
-### 7. searchMultipleProducts()
-
-Busca múltiples productos simultáneamente.
-
-```javascript
-const result = csvUtils.searchMultipleProducts(
-  rows,
-  ['ASP001', 'IBU002', 'ACE003'],
-  1,
-  columnNames
-);
-
-// Resultado:
-// {
-//   found: true,
-//   results: [
-//     {productId: 'ASP001', found: true, product: {...}, rowIndex: 42},
-//     {productId: 'IBU002', found: true, product: {...}, rowIndex: 43},
-//     {productId: 'ACE003', found: false, product: null, rowIndex: -1}
-//   ],
-//   totalFound: 2,
-//   totalNotFound: 1,
-//   totalSearched: 3,
-//   totalSearchTime: 512
-// }
-```
-
----
-
-### 8. filterProducts()
-
-Filtra productos por múltiples criterios.
-
-```javascript
-const result = csvUtils.filterProducts(
-  rows,
-  [
-    {columnName: 'Status', value: 'Active'},
-    {columnName: 'Price', value: '10', operator: 'lt'}
-  ],
-  columnNames,
-  50  // limit
-);
-
-// Operadores soportados: eq, contains, gt, lt, gte, lte
-```
-
----
-
-### 9. getAllProducts()
-
-Obtiene todos los productos como objetos.
-
-```javascript
-const result = csvUtils.getAllProducts(rows, columnNames);
-
-// Resultado:
-// {
-//   found: true,
-//   products: [
-//     {product: {...}, rowIndex: 0},
-//     {product: {...}, rowIndex: 1},
-//     ...
-//   ],
-//   totalProducts: 131,
-//   loadTime: 1245
-// }
-```
-
----
-
-### 10. createIndex()
-
-Crea índice para búsquedas rápidas (O(1)).
-
-```javascript
-const index = csvUtils.createIndex(rows, 1);  // Índice por columna 1 (Code)
-
-// Resultado:
-// {
-//   'ASP001': 42,
-//   'IBU002': 43,
-//   'ACE003': 44,
-//   ...
-// }
-```
-
----
-
-### 11. searchWithIndex()
-
-Búsqueda usando índice (O(1)).
-
-```javascript
-const result = csvUtils.searchWithIndex(
-  index,
-  rows,
-  'ASP001',
-  columnNames
-);
-
-// Resultado: {found: true, product: {...}, searchTime: 1}
-```
-
----
-
-### 12. validateCSVStructure()
-
-Valida estructura del CSV.
-
-```javascript
-const validation = csvUtils.validateCSVStructure(rows, columnNames);
-
-// Resultado:
-// {
-//   valid: true,
-//   errors: [],
-//   warnings: ['Found 5 empty cells'],
-//   rowCount: 131,
-//   columnCount: 22,
-//   emptyValueCount: 5
-// }
-```
-
----
-
-### 13. getCSVStatistics()
-
-Obtiene estadísticas del CSV.
-
-```javascript
-const stats = csvUtils.getCSVStatistics(rows, columnNames);
-
-// Resultado:
-// {
-//   totalRows: 131,
-//   totalColumns: 22,
-//   totalCells: 2882,
-//   emptyCount: 5,
-//   columnStats: {
-//     'MedicationName': {
-//       emptyCount: 0,
-//       uniqueCount: 128,
-//       minLength: 3,
-//       maxLength: 45
-//     },
-//     ...
-//   }
-// }
-```
+Ver documentación completa en [REUTILIZACION-LECTURA-ARCHIVOS.md](./REUTILIZACION-LECTURA-ARCHIVOS.md) para:
+- extractHeader()
+- rowToObject()
+- searchProductInRows()
+- searchProductAdvanced()
+- searchMultipleProducts()
+- filterProducts()
+- getAllProducts()
+- createIndex()
+- searchWithIndex()
+- validateCSVStructure()
+- getCSVStatistics()
 
 ---
 
@@ -381,26 +336,12 @@ curl -X POST http://localhost:3000/api/product/search \
     "Code": "ASP001",
     "Dosage": "500mg",
     "Route": "Oral",
-    "Frequency": "As needed",
-    "SideEffects": "May cause stomach upset",
     "Price": "5.99",
-    "Quantity": "1000",
-    ...
+    "Quantity": "1000"
   },
   "rowIndex": 42,
   "totalRows": 131,
   "searchTime": 245
-}
-```
-
-**Response (404 Not Found)**:
-```json
-{
-  "found": false,
-  "product": null,
-  "rowIndex": -1,
-  "totalRows": 131,
-  "searchTime": 12
 }
 ```
 
@@ -423,33 +364,6 @@ curl -X POST http://localhost:3000/api/product/search-advanced \
   }'
 ```
 
-**Response (200 OK)**:
-```json
-{
-  "found": true,
-  "results": [
-    {
-      "product": {
-        "MedicationName": "Aspirin",
-        "Code": "ASP001",
-        ...
-      },
-      "rowIndex": 42
-    },
-    {
-      "product": {
-        "MedicationName": "Aspirin Extended Release",
-        "Code": "ASP002",
-        ...
-      },
-      "rowIndex": 43
-    }
-  ],
-  "totalFound": 2,
-  "searchTime": 156
-}
-```
-
 ---
 
 ### 3. POST /api/product/search-multiple
@@ -463,37 +377,6 @@ curl -X POST http://localhost:3000/api/product/search-multiple \
     "productIds": ["ASP001", "IBU002", "ACE003"],
     "searchColumnIndex": 1
   }'
-```
-
-**Response (200 OK)**:
-```json
-{
-  "found": true,
-  "results": [
-    {
-      "productId": "ASP001",
-      "found": true,
-      "product": {...},
-      "rowIndex": 42
-    },
-    {
-      "productId": "IBU002",
-      "found": true,
-      "product": {...},
-      "rowIndex": 43
-    },
-    {
-      "productId": "ACE003",
-      "found": false,
-      "product": null,
-      "rowIndex": -1
-    }
-  ],
-  "totalFound": 2,
-  "totalNotFound": 1,
-  "totalSearched": 3,
-  "totalSearchTime": 512
-}
 ```
 
 ---
@@ -514,32 +397,7 @@ curl -X POST http://localhost:3000/api/product/filter \
   }'
 ```
 
-**Operadores soportados**:
-- `eq` - Igual (default)
-- `contains` - Contiene
-- `gt` - Mayor que
-- `lt` - Menor que
-- `gte` - Mayor o igual que
-- `lte` - Menor o igual que
-
-**Response (200 OK)**:
-```json
-{
-  "found": true,
-  "results": [
-    {
-      "product": {...},
-      "rowIndex": 5
-    },
-    {
-      "product": {...},
-      "rowIndex": 12
-    }
-  ],
-  "totalFound": 23,
-  "filterTime": 345
-}
-```
+**Operadores soportados**: `eq`, `contains`, `gt`, `lt`, `gte`, `lte`
 
 ---
 
@@ -551,34 +409,6 @@ curl -X POST http://localhost:3000/api/product/filter \
 curl -X GET http://localhost:3000/api/product/all
 ```
 
-**Response (200 OK)**:
-```json
-{
-  "found": true,
-  "products": [
-    {
-      "product": {
-        "MedicationName": "Aspirin",
-        "Code": "ASP001",
-        ...
-      },
-      "rowIndex": 0
-    },
-    {
-      "product": {
-        "MedicationName": "Ibuprofen",
-        "Code": "IBU002",
-        ...
-      },
-      "rowIndex": 1
-    },
-    ...
-  ],
-  "totalProducts": 131,
-  "loadTime": 1245
-}
-```
-
 ---
 
 ### 6. GET /api/product/stats
@@ -587,37 +417,6 @@ curl -X GET http://localhost:3000/api/product/all
 
 ```bash
 curl -X GET http://localhost:3000/api/product/stats
-```
-
-**Response (200 OK)**:
-```json
-{
-  "totalRows": 131,
-  "totalColumns": 22,
-  "totalCells": 2882,
-  "emptyCount": 5,
-  "columnStats": {
-    "MedicationName": {
-      "emptyCount": 0,
-      "uniqueCount": 128,
-      "minLength": 3,
-      "maxLength": 45
-    },
-    "Code": {
-      "emptyCount": 0,
-      "uniqueCount": 131,
-      "minLength": 5,
-      "maxLength": 8
-    },
-    "Price": {
-      "emptyCount": 2,
-      "uniqueCount": 89,
-      "minLength": 3,
-      "maxLength": 7
-    },
-    ...
-  }
-}
 ```
 
 ---
@@ -775,8 +574,6 @@ curl -X POST http://localhost:3000/api/product/search \
   -d '{"productId":"ASP001","searchColumnIndex":1}'
 ```
 
-**Resultado esperado**: `{"found":true,"product":{...}}`
-
 ---
 
 ### Test 2: Búsqueda Avanzada
@@ -793,8 +590,6 @@ curl -X POST http://localhost:3000/api/product/search-advanced \
   }'
 ```
 
-**Resultado esperado**: `{"found":true,"results":[...]}`
-
 ---
 
 ### Test 3: Obtener Todos
@@ -803,8 +598,6 @@ curl -X POST http://localhost:3000/api/product/search-advanced \
 curl -X GET http://localhost:3000/api/product/all
 ```
 
-**Resultado esperado**: `{"found":true,"products":[...]}`
-
 ---
 
 ### Test 4: Estadísticas
@@ -812,8 +605,6 @@ curl -X GET http://localhost:3000/api/product/all
 ```bash
 curl -X GET http://localhost:3000/api/product/stats
 ```
-
-**Resultado esperado**: `{"totalRows":131,"totalColumns":22,...}`
 
 ---
 
@@ -877,13 +668,17 @@ const results = await Promise.all(
 
 | Aspecto | Detalles |
 |--------|----------|
-| **Funciones CSV** | 13 funciones reutilizables |
-| **Endpoints** | 6 nuevos endpoints |
-| **Desencriptación** | Automática |
-| **Manejo de errores** | Completo |
-| **Logging** | Detallado |
-| **Performance** | O(n) a O(1) con índices |
-| **Escalabilidad** | Caché y paralelismo |
+| **Funciones CSV** | 13 reutilizables |
+| **Endpoints nuevos** | 6 |
+| **Líneas de código** | 1,241 |
+| **Desencriptación** | ✅ Automática |
+| **Manejo de errores** | ✅ Completo |
+| **Logging** | ✅ Detallado |
+| **Performance** | ✅ O(1) con índices |
+| **Documentación** | ✅ Completa |
+| **Flujo de credenciales** | ✅ Dos fases (Testing + Producción) |
+| **Seguridad** | ✅ Encriptación AES-GCM |
+| **Configuración guardada** | ✅ Reutilizable en producción |
 
 ---
 

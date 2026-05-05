@@ -3,13 +3,82 @@
 ## 📋 Tabla de Contenidos
 
 1. [Arquitectura de Dos Fases](#arquitectura-de-dos-fases)
-2. [Fase 1: Configuración (Testing)](#fase-1-configuración-testing)
-3. [Fase 2: Producción (Búsqueda)](#fase-2-producción-búsqueda)
-4. [Funciones Reutilizables](#funciones-reutilizables)
-5. [Formato de Datos](#formato-de-datos)
-6. [Ejemplos Prácticos](#ejemplos-prácticos)
-7. [Endpoints para Producción](#endpoints-para-producción)
-8. [Guía de Integración](#guía-de-integración)
+2. [Flujo de Credenciales Encriptadas](#flujo-de-credenciales-encriptadas)
+3. [Fase 1: Configuración (Testing)](#fase-1-configuración-testing)
+4. [Fase 2: Producción (Búsqueda)](#fase-2-producción-búsqueda)
+5. [Funciones Reutilizables](#funciones-reutilizables)
+6. [Formato de Datos](#formato-de-datos)
+7. [Ejemplos Prácticos](#ejemplos-prácticos)
+8. [Endpoints para Producción](#endpoints-para-producción)
+9. [Guía de Integración](#guía-de-integración)
+10. [Seguridad](#seguridad)
+
+---
+
+## Flujo de Credenciales Encriptadas
+
+### ¿Cómo se manejan las credenciales?
+
+**Principio fundamental**: Las credenciales nunca se guardan en texto plano.
+
+#### Ciclo de vida de una contraseña
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ CICLO DE VIDA DE CREDENCIALES                           │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│ 1. ENTRADA (Usuario)                                   │
+│    └─ Texto plano: "client123"                         │
+│                                                         │
+│ 2. ENCRIPTACIÓN (Frontend)                             │
+│    └─ AES-GCM con ENCRYPTION_SECRET                    │
+│    └─ Resultado: "enc:v1:aes-gcm:..."                  │
+│                                                         │
+│ 3. TRANSMISIÓN (HTTPS)                                 │
+│    └─ Encriptada en tránsito                           │
+│    └─ Backend recibe: "enc:v1:aes-gcm:..."             │
+│                                                         │
+│ 4. ALMACENAMIENTO (config.json)                        │
+│    └─ Guardada encriptada                              │
+│    └─ Nunca en texto plano                             │
+│                                                         │
+│ 5. DESENCRIPTACIÓN (Backend en memoria)                │
+│    └─ Solo cuando se necesita acceder a SMB            │
+│    └─ Usa ENCRYPTION_SECRET de .env                    │
+│    └─ Resultado: "client123"                           │
+│                                                         │
+│ 6. USO (Comando PowerShell)                            │
+│    └─ Acceso a SMB                                     │
+│    └─ Credenciales en memoria                          │
+│                                                         │
+│ 7. DESCARTE                                            │
+│    └─ Se elimina de memoria                            │
+│    └─ No se loguea                                     │
+│    └─ No se expone                                     │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Requisitos de Seguridad
+
+1. **ENCRYPTION_SECRET**
+   - Debe ser el MISMO en frontend y backend
+   - Debe ser diferente en cada entorno (dev, staging, prod)
+   - Debe tener mínimo 32 caracteres
+   - Nunca debe estar en el código
+   - Debe estar en `backend/.env` (NO en .gitignore)
+
+2. **Almacenamiento**
+   - `config/app-config.json` - Guardado encriptado (OK en repo)
+   - `backend/.env` - Contiene ENCRYPTION_SECRET (EN .gitignore)
+   - Nunca guardar credenciales en texto plano
+
+3. **Transmisión**
+   - Siempre usar HTTPS en producción
+   - Credenciales encriptadas en el body
+   - No en headers
+   - No en URLs
 
 ---
 
@@ -37,7 +106,8 @@
 │    ├─ Guarda delimitador detectado                     │
 │    ├─ Guarda nombres de columnas                       │
 │    ├─ Guarda índices de columnas                       │
-│    └─ Guarda credenciales encriptadas                  │
+│    ├─ Guarda credenciales ENCRIPTADAS (AES-GCM)        │
+│    └─ Guarda username (texto plano, no sensible)       │
 │                                                          │
 │ Resultado: config/app-config.json                       │
 │ {                                                        │
