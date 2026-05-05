@@ -11,8 +11,9 @@ import { promisify } from 'util';
 const execAsync = promisify(exec);
 
 class NetworkPathHandlerWindows {
-  constructor() {
+  constructor(credentialCrypto = null) {
     this.logs = [];
+    this.credentialCrypto = credentialCrypto;
   }
 
   /**
@@ -270,6 +271,18 @@ class NetworkPathHandlerWindows {
   async detect(credentials) {
     try {
       this.logs = [];
+
+      // Decrypt password if encrypted and credentialCrypto is available
+      if (this.credentialCrypto && credentials.password) {
+        try {
+          this.addLog('Decrypting password...');
+          credentials.password = await this.credentialCrypto.decrypt(credentials.password);
+          this.addLog('Password decrypted successfully');
+        } catch (error) {
+          this.addLog(`Decryption error: ${error.message}`);
+          throw error;
+        }
+      }
 
       // Validate input
       if (!credentials.path || !credentials.pattern) {

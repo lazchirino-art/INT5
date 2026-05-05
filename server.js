@@ -13,6 +13,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from 'fs';
 import NetworkPathHandlerWindows from './backend/network-path-handler-windows.js';
+import CredentialCrypto from './backend/credential-crypto.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -224,8 +225,14 @@ app.post('/test-connection', async (req, res) => {
 
     console.log(`\n[REQUEST] Testing connection to: ${path}`);
 
+    // Initialize CredentialCrypto with encryption secret
+    let credentialCrypto = null;
+    if (process.env.ENCRYPTION_SECRET) {
+      credentialCrypto = new CredentialCrypto(process.env.ENCRYPTION_SECRET);
+    }
+
     // Crear handler
-    const handler = new NetworkPathHandlerWindows();
+    const handler = new NetworkPathHandlerWindows(credentialCrypto);
 
     // Ejecutar detección
     const result = await handler.detect({
