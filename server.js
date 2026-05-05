@@ -275,7 +275,14 @@ app.post('/api/connector/read-file', async (req, res) => {
     }
 
     console.log(`[API] Reading file from: ${path}`);
-    const handler = new NetworkPathHandlerWindows();
+    
+    // Initialize CredentialCrypto with encryption secret
+    let credentialCrypto = null;
+    if (process.env.ENCRYPTION_SECRET) {
+      credentialCrypto = new CredentialCrypto(process.env.ENCRYPTION_SECRET);
+    }
+    
+    const handler = new NetworkPathHandlerWindows(credentialCrypto);
 
     const detectResult = await handler.detect({
       path,
@@ -289,11 +296,23 @@ app.post('/api/connector/read-file', async (req, res) => {
       return res.status(400).json({ error: { message: 'File not found' }, logs: detectResult.logs });
     }
 
+    // Decrypt password if needed before passing to readFile
+    let decryptedPassword = password;
+    if (credentialCrypto && password) {
+      try {
+        decryptedPassword = await credentialCrypto.decrypt(password);
+      } catch (error) {
+        console.error('[API] Decryption error:', error.message);
+        // If decryption fails, try with original password
+        decryptedPassword = password;
+      }
+    }
+    
     const fileContent = await handler.readFile({
       path,
       filename: detectResult.file,
       username: useAuthentication ? username : null,
-      password: useAuthentication ? password : null,
+      password: useAuthentication ? decryptedPassword : null,
       domain: useAuthentication && domain ? domain : null
     });
 
