@@ -571,3 +571,36 @@ function addMapping() {
 function removeRow(element) {
     element.closest('tr').remove();
 }
+
+// ==================== INITIALIZATION ====================
+/**
+ * Initialize application when DOM is ready
+ * Loads saved configuration and initializes UI components
+ */
+document.addEventListener('DOMContentLoaded', async () => {
+  console.log('[App] Initializing CSV Integration...');
+  
+  try {
+    // Initialize network path client
+    initializeNetworkPathClient();
+    console.log('[App] Network Path Client initialized');
+    
+    // Initialize Parser UI
+    ParserUI.init();
+    console.log('[App] Parser UI initialized');
+    
+    // Load saved configuration (both Connector and Parser)
+    console.log('[App] Loading saved configuration...');
+    const configLoaded = await ConfigLoader.loadAndRenderNetworkConfig();
+    
+    if (configLoaded) {
+      console.log('[App] Configuration loaded successfully');
+    } else {
+      console.log('[App] No saved configuration found - starting fresh');
+    }
+    
+    console.log('[App] Initialization complete');
+  } catch (error) {
+    console.error('[App] Initialization error:', error);
+  }
+});

@@ -57,6 +57,13 @@ class ConfigLoader {
       toggleOptionalField('useNetworkDomain', 'networkDomain');
 
       console.log('[ConfigLoader] Network Path configuration loaded successfully');
+      
+      // Also load Parser configuration if available
+      const parserLoaded = await ParserUI.loadAndRenderParserConfig();
+      if (parserLoaded) {
+        console.log('[ConfigLoader] Parser configuration also loaded');
+      }
+      
       return true;
 
     } catch (error) {

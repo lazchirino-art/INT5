@@ -523,6 +523,90 @@ class ParserUI {
       saveButton.disabled = true;
     }
   }
+
+  // ==================== LOAD CONFIGURATION ====================
+  /**
+   * Load saved parser configuration from backend and render in UI
+   */
+  static async loadAndRenderParserConfig() {
+    try {
+      console.log('[ParserUI] Loading saved parser configuration...');
+
+      // Load configuration from backend
+      const response = await fetch('/api/config/load');
+      if (!response.ok) {
+        console.log('[ParserUI] No configuration found in backend');
+        return false;
+      }
+
+      const data = await response.json();
+      if (data.status !== 'SUCCESS' || !data.config?.parser) {
+        console.log('[ParserUI] No parser configuration found');
+        return false;
+      }
+
+      const parserConfig = data.config.parser;
+      console.log('[ParserUI] Parser configuration loaded:', parserConfig);
+
+      // 1. Render parsing settings
+      const delimiterSelect = document.getElementById('parserDelimiter');
+      const hasHeaderSelect = document.getElementById('parserHasHeader');
+      const quoteCharInput = document.getElementById('parserQuoteChar');
+      const escapeCharInput = document.getElementById('parserEscapeChar');
+
+      if (delimiterSelect) {
+        delimiterSelect.value = parserConfig.delimiter || ',';
+      }
+
+      if (hasHeaderSelect) {
+        hasHeaderSelect.value = parserConfig.hasHeader ? 'Yes' : 'No';
+      }
+
+      if (quoteCharInput) {
+        quoteCharInput.value = parserConfig.quoteChar || '"';
+      }
+
+      if (escapeCharInput) {
+        escapeCharInput.value = parserConfig.escapeChar || '"';
+      }
+
+      console.log('[ParserUI] Parsing settings loaded');
+
+      // 2. Render Expected Columns table
+      if (parserConfig.columns && Array.isArray(parserConfig.columns)) {
+        const tbody = document.getElementById('columnsBody');
+        if (tbody) {
+          tbody.innerHTML = ''; // Clear existing rows
+
+          parserConfig.columns.forEach((col) => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+              <td><input type="text" value="${col.name}" placeholder="column_name"></td>
+              <td><input type="number" value="${col.index}" placeholder="index" min="0"></td>
+              <td>
+                <select>
+                  <option value="String" ${col.dataType === 'String' ? 'selected' : ''}>String</option>
+                  <option value="Date" ${col.dataType === 'Date' ? 'selected' : ''}>Date</option>
+                  <option value="Number" ${col.dataType === 'Number' ? 'selected' : ''}>Number</option>
+                </select>
+              </td>
+              <td><span class="delete-btn" onclick="removeRow(this)">x</span></td>
+            `;
+            tbody.appendChild(row);
+          });
+
+          console.log(`[ParserUI] Loaded ${parserConfig.columns.length} columns`);
+        }
+      }
+
+      console.log('[ParserUI] Parser configuration rendered successfully');
+      return true;
+
+    } catch (error) {
+      console.error('[ParserUI] Error loading parser configuration:', error);
+      return false;
+    }
+  }
 }
 
 // ==================== INITIALIZATION ====================
