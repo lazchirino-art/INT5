@@ -4,6 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Menú</title>
+  <script>
+  Object.defineProperty(window, 'CSV_INT_LOCAL_SECRET', {
+    value: "my_super_secret_key_123",
+    writable: false,
+    configurable: false
+  });
+</script>
   <style>
     :root {
       --bg: #000000;
@@ -185,7 +192,7 @@
       <section class="section" aria-labelledby="integraciones-title">
         <h2 class="section-title" id="integraciones-title">Integraciones</h2>
         <div class="button-grid three">
-          <a class="menu-button" href="pages/csv-integration.html">CSV</a>
+          <a class="menu-button" href="csv-integration.html">CSV</a>
           <button class="menu-button" type="button">API-RESP</button>
           <button class="menu-button" type="button">Database</button>
         </div>

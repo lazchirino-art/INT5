@@ -51,32 +51,17 @@ class NetworkPathHandlerWindows {
   /**
    * Build PowerShell command with credentials
    */
-  buildPowerShellCommand(path, credentials) {
-    const escapedPath = path.replace(/"/g, '\\"').replace(/'/g, "''");
-    
-    // If no credentials, use simple command
-    if (!credentials.username || !credentials.password) {
-      return `powershell -Command "Get-ChildItem -Path '${escapedPath}' -File | Select-Object Name | ConvertTo-Json"`;
-    }
+	buildPowerShellCommand(path, credentials) {
+	  const escapedPath = path.replace(/"/g, '\\"');
 
-    // Build credential object for PowerShell
-    const escapedUsername = credentials.username.replace(/"/g, '\\"');
-    const escapedPassword = credentials.password.replace(/"/g, '\\"');
-    
-    let credentialCommand = `$secPassword = ConvertTo-SecureString '${escapedPassword}' -AsPlainText -Force; `;
-    
-    // If domain is specified, use domain\\username format
-    if (credentials.domain) {
-      const escapedDomain = credentials.domain.replace(/"/g, '\\"');
-      credentialCommand += `$cred = New-Object System.Management.Automation.PSCredential('${escapedDomain}\\${escapedUsername}', $secPassword); `;
-    } else {
-      credentialCommand += `$cred = New-Object System.Management.Automation.PSCredential('${escapedUsername}', $secPassword); `;
-    }
+	  // SIN credenciales
+	  if (!credentials.username || !credentials.password) {
+		return `cmd /c dir ${escapedPath}`;
+	  }
 
-    credentialCommand += `Get-ChildItem -Path '${escapedPath}' -File -Credential $cred | Select-Object Name | ConvertTo-Json`;
-
-    return `powershell -Command "${credentialCommand}"`;
-  }
+	  // CON credenciales
+	  return `cmd /c "net use ${escapedPath} /delete /y & net use ${escapedPath} /user:${credentials.username} ${credentials.password} && dir ${escapedPath}"`;
+	}
 
   /**
    * List files via PowerShell
@@ -87,74 +72,111 @@ class NetworkPathHandlerWindows {
 
       // Build command with credentials
       const psCommand = this.buildPowerShellCommand(path, credentials);
-
+	  //this.addLog(`PS COMMAND: ${psCommand}`);
       this.addLog(`Connecting with credentials: ${credentials.username ? 'Yes' : 'No'}`);
       if (credentials.domain) {
         this.addLog(`Domain: ${credentials.domain}`);
       }
 
       const { stdout, stderr } = await execAsync(psCommand, { timeout: 10000 });
-
+	  //this.addLog(`STDOUT: ${stdout}`);
+	  //this.addLog(`STDERR: ${stderr}`);
+	  //this.addLog(`RAW OUTPUT: ${stdout}`);
       if (stderr && !stderr.includes('Warning')) {
         throw new Error(stderr);
       }
 
-      // Parse JSON
       let files = [];
-      if (stdout.trim()) {
-        try {
-          const parsed = JSON.parse(stdout);
-          files = Array.isArray(parsed) ? parsed.map(f => f.Name) : [parsed.Name];
-        } catch (e) {
-          this.addLog('Warning: Could not parse file list');
-          files = [];
-        }
-      }
+
+		if (stdout) {
+		  const lines = stdout.split('\n');
+
+		  files = lines
+			.map(line => line.trim())
+			.filter(line => line.endsWith('.csv'))
+			.map(line => {
+			  const parts = line.split(/\s+/);
+			  return parts[parts.length - 1];
+			});
+		}
 
       this.addLog('Folder accessible');
       this.addLog(`Files found: ${files.length}`);
-
+	  //this.addLog(`Files detected: ${JSON.stringify(files)}`);
+	  
       return files;
     } catch (error) {
-      if (error.message.includes('cannot find path')) {
+		const msg = error.message.toLowerCase();
+		if (msg.includes('system error 67')) {
+		  throw new Error(
+			'SERVER NOT REACHABLE<br>' +
+			'Cannot connect to the network share.<br><br>' +
+			'Suggestions:<br>' +
+			'• Ensure the server is powered on<br>' +
+			'• Check the network connection<br>' +
+			'• Verify the path is correct (\\\\server\\share)<br>' +
+			'• Try pinging the server'
+		  );
+		}
+      else if (msg.includes('cannot find path')) {
         throw new Error(
-          'FOLDER NOT FOUND\n' +
-          'The path does not exist or is not accessible.\n' +
-          'Verify:\n' +
-          '1. Path is correct: \\\\server\\share\\folder\n' +
-          '2. Server is online and reachable\n' +
-          '3. Shared folder exists\n' +
+          'FOLDER NOT FOUND<br>' +
+          'The path does not exist or is not accessible.<br>' +
+          'Verify:<br>' +
+          '1. Path is correct: \\\\server\\share\\folder<br>' +
+          '2. Server is online and reachable<br>' +
+          '3. Shared folder exists<br>' +
           '4. You have network access to this location'
         );
-      } else if (error.message.includes('Access is denied')) {
+      } else if (msg.includes('Access is denied')) {
         throw new Error(
-          'ACCESS DENIED\n' +
-          'You do not have permission to access this folder.\n' +
-          'Verify:\n' +
-          '1. Username and password are correct\n' +
-          '2. User has read permissions on the folder\n' +
-          '3. Domain is correct (if using domain authentication)\n' +
+          'ACCESS DENIED<br>' +
+          'You do not have permission to access this folder.<br>' +
+          'Verify:<br>' +
+          '1. Username and password are correct<br>' +
+          '2. User has read permissions on the folder<br>' +
+          '3. Domain is correct (if using domain authentication)<br>' +
           '4. Try with different credentials'
         );
-      } else if (error.message.includes('The user name or password is incorrect')) {
+      } else if (msg.includes('The user name or password is incorrect')) {
         throw new Error(
-          'AUTHENTICATION FAILED\n' +
-          'Username or password is incorrect.\n' +
-          'Verify:\n' +
-          '1. Username is correct\n' +
-          '2. Password is correct\n' +
-          '3. Domain is correct (if using domain authentication)\n' +
+          'AUTHENTICATION FAILED<br>' +
+          'Username or password is incorrect.<br>' +
+          'Verify:<br>' +
+          '1. Username is correct<br>' +
+          '2. Password is correct<br>' +
+          '3. Domain is correct (if using domain authentication)<br>' +
           '4. Account is not locked or disabled'
         );
-      } else {
+      } else if (msg.includes('system error 64')) {
+		  throw new Error(
+			'CONNECTION LOST<br>' +
+			'The connection to the network share was interrupted.<br><br>' +
+			'Suggestions:<br>' +
+			'• Check network stability<br>' +
+			'• Ensure the server is still online<br>' +
+			'• Try again in a few seconds<br>' +
+			'• Verify no VPN/firewall is interrupting the connection'
+		  );
+		} else if (msg.includes('access is denied')) {
+		  throw new Error(
+			'ACCESS DENIED<br>' +
+			'You do not have permission to access the shared folder.<br><br>' +
+			'Suggestions:<br>' +
+			'• Verify username and password<br>' +
+			'• Ensure the user has read access to the shared folder<br>' +
+			'• Check share permissions on the server<br>' +
+			'• Try accessing the folder manually from Windows'
+		  );
+		}else {
         throw new Error(
-          'CANNOT ACCESS FOLDER\n' +
-          `Error: ${error.message}\n` +
-          'Verify:\n' +
-          '1. Network connection is active\n' +
-          '2. Path format is correct\n' +
-          '3. Server is reachable (try ping)\n' +
-          '4. Firewall is not blocking SMB (port 445)'
+          'CANNOT ACCESS FOLDER<br>' +
+          `Error: ${error.message}<br>` +
+          'Verify:<br>' +
+          '1. Network connection is active<br>' +
+          '2. Path format is correct<br>' +
+          '3. Server is reachable (try ping)<br>' +
+          '4. Username or/and password is incorrect'
         );
       }
     }
@@ -226,8 +248,12 @@ class NetworkPathHandlerWindows {
       const { stdout, stderr } = await execAsync(`powershell -Command "${psCommand}"`);
 
       if (stderr) {
-        throw new Error(stderr);
-      }
+		  if (stderr.includes('2250')) {
+			this.addLog('Info: No previous connection to delete');
+		  } else {
+			throw new Error(stderr);
+		  }
+		}
 
       this.addLog(`File read successfully: ${filename}`);
       return stdout;

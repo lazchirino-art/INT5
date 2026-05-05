@@ -18,10 +18,9 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "express": "^4.18.2",
-    "smb2": "^0.2.9",
     "cors": "^2.8.5",
-    "dotenv": "^16.0.3"
-  },
-  "devDependencies": {}
+    "dotenv": "^16.6.1",
+    "express": "^4.18.2",
+    "smb2": "^0.2.9"
+  }
 }

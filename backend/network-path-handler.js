@@ -196,7 +196,7 @@ class NetworkPathHandler {
       const client = await this.connectToSMB(
         parsed.server,
         parsed.share,
-        credentials.username,
+        user,
         credentials.password
       );
 

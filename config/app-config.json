@@ -1,13 +1,15 @@
 {
   "connection": {
-    "connectorType": "networkPath",
-    "type": "Network Path",
-    "path": "\\\\Desktop-ibfsjcq\\int5",
-    "fileNamePattern": "products*.csv",
-    "useAuthentication": false,
-    "username": "",
-    "password": "",
-    "useDomain": false,
-    "domain": ""
+    "connection": {
+      "connectorType": "networkPath",
+      "type": "Network Path",
+      "path": "\\\\Laptop-fjiolk7l\\new",
+      "fileNamePattern": "*.csv",
+      "useAuthentication": true,
+      "username": "client",
+      "password": "enc:v1:aes-gcm:ciRxepvW6xHwCi4P:vLmj02javzInYx9prVmpj0BxRAob2uIF3g==",
+      "useDomain": false,
+      "domain": ""
+    }
   }
 }

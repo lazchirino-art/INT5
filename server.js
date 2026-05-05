@@ -4,7 +4,9 @@
  * Servidor Express que expone endpoint para acceso a SMB
  * Frontend → HTTP → Backend → SMB
  */
-
+import dotenv from 'dotenv';
+dotenv.config({ path: 'backend/.env' });
+console.log('SECRET:', process.env.ENCRYPTION_SECRET);
 import express from 'express';
 import cors from 'cors';
 import { fileURLToPath } from 'url';
@@ -72,8 +74,10 @@ app.post('/api/config/save', (req, res) => {
     }
 
     // Guardar configuración en archivo
-    writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
-    
+    writeFileSync(CONFIG_FILE, JSON.stringify({
+	  connection: config
+	}, null, 2));
+		
     console.log('[CONFIG] Configuration saved successfully');
     res.json({ 
       status: 'SUCCESS', 
@@ -106,6 +110,7 @@ app.get('/api/config/load', (req, res) => {
 
     const configData = readFileSync(CONFIG_FILE, 'utf-8');
     const config = JSON.parse(configData);
+	console.log('[DEBUG CONFIG LOADED]:', config);
     
     console.log('[CONFIG] Configuration loaded successfully');
     res.json({ 
@@ -249,7 +254,10 @@ app.post('/test-connection', async (req, res) => {
 /**
  * POST /api/connector/read-file
  */
+ 
 app.post('/api/connector/read-file', async (req, res) => {
+	console.log('🔥 READ FILE CALLED 🔥');
+	console.log('[DEBUG REQUEST BODY]:', req.body);
   try {
     const { connectorType, path, fileNamePattern, username, password, domain, useAuthentication } = req.body;
 
@@ -333,6 +341,7 @@ app.use((err, req, res, next) => {
  * Start server
  */
 app.listen(PORT, () => {
+	console.log('🔥 ESTE ES MI SERVER REAL 🔥');
   console.log(`\n${'='.repeat(50)}`);
   console.log(`Backend Server`);
   console.log(`${'='.repeat(50)}`);
@@ -369,3 +378,4 @@ process.on('uncaughtException', (error) => {
   console.error('[UNCAUGHT EXCEPTION]', error);
   process.exit(1);
 });
+console.log('CONFIG FILE PATH:', CONFIG_FILE);
