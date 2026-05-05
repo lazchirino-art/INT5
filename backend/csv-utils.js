@@ -1,6 +1,11 @@
 /**
  * CSV Utilities - Reusable functions for CSV parsing and searching
  * Used in both testing and production environments
+ * 
+ * IMPORTANT: All functions now respect configured columns
+ * - Only returns columns specified in configuration
+ * - Maintains order from Expected Columns table
+ * - Applies data type formatting
  */
 
 /**
@@ -103,7 +108,7 @@ export function extractHeader(
     return [];
   }
 
-  const lines = content.split('\n').filter(line => line.trim());
+  const lines = content.split('\n');
   if (lines.length === 0) {
     return [];
   }
@@ -112,18 +117,68 @@ export function extractHeader(
 }
 
 /**
- * Convert row array to object using column names
+ * Format value according to data type
  * 
- * @param {Array<string>} row - Row data
- * @param {Array<string>} columnNames - Column names
+ * @param {string} value - Raw value from CSV
+ * @param {string} dataType - Data type (String, Number, Date)
  * 
- * @returns {Object} Row as object
+ * @returns {string|number|Date} Formatted value
  */
-export function rowToObject(row, columnNames) {
+export function formatValue(value, dataType = 'String') {
+  if (!value || value === '') {
+    return '';
+  }
+
+  switch (dataType) {
+    case 'Number':
+      const num = parseFloat(value);
+      return isNaN(num) ? value : num;
+    
+    case 'Date':
+      const date = new Date(value);
+      return isNaN(date.getTime()) ? value : date.toISOString().split('T')[0];
+    
+    case 'String':
+    default:
+      return String(value).trim();
+  }
+}
+
+/**
+ * Convert CSV row to object using ONLY configured columns
+ * 
+ * IMPORTANT: This function now filters by configured columns
+ * - Only includes columns specified in configuredColumns
+ * - Maintains order from configuredColumns array
+ * - Applies data type formatting
+ * 
+ * @param {Array<string>} row - Raw CSV row (all fields)
+ * @param {Array<Object>} configuredColumns - Configured columns with {name, index, dataType}
+ * 
+ * @returns {Object} Object with only configured columns
+ */
+export function rowToObject(row, configuredColumns) {
   const obj = {};
 
-  columnNames.forEach((colName, idx) => {
-    obj[colName] = row[idx] || '';
+  if (!Array.isArray(configuredColumns) || configuredColumns.length === 0) {
+    console.warn('[rowToObject] No configured columns provided');
+    return obj;
+  }
+
+  // Iterate in order of configured columns
+  configuredColumns.forEach((col) => {
+    const colIndex = col.index;
+    const colName = col.name;
+    const dataType = col.dataType || 'String';
+
+    // Get value from row at specified index
+    const rawValue = row[colIndex] || '';
+    
+    // Format according to data type
+    const formattedValue = formatValue(rawValue, dataType);
+    
+    // Add to object in order
+    obj[colName] = formattedValue;
   });
 
   return obj;
@@ -135,11 +190,11 @@ export function rowToObject(row, columnNames) {
  * @param {Array<Array<string>>} rows - Parsed CSV rows
  * @param {string} productId - Product identifier to search
  * @param {number} searchColumnIndex - Column index to search in
- * @param {Array<string>} columnNames - Column names for result object
+ * @param {Array<Object>} configuredColumns - Configured columns
  * 
- * @returns {Object} Search result
+ * @returns {Object} Search result with only configured columns
  */
-export function searchProductInRows(rows, productId, searchColumnIndex, columnNames) {
+export function searchProductInRows(rows, productId, searchColumnIndex, configuredColumns) {
   const startTime = Date.now();
 
   if (!Array.isArray(rows) || rows.length === 0) {
@@ -175,7 +230,8 @@ export function searchProductInRows(rows, productId, searchColumnIndex, columnNa
     const searchValue = productId.toString().trim();
 
     if (cellValue === searchValue) {
-      const product = rowToObject(row, columnNames);
+      // Convert to object using ONLY configured columns
+      const product = rowToObject(row, configuredColumns);
 
       return {
         found: true,
@@ -198,84 +254,93 @@ export function searchProductInRows(rows, productId, searchColumnIndex, columnNa
 }
 
 /**
- * Advanced search with multiple criteria
+ * Search for a product with advanced criteria
  * 
  * @param {Array<Array<string>>} rows - Parsed CSV rows
- * @param {Object} searchCriteria - Search criteria
- * @param {string} searchCriteria.columnName - Column name to search in
- * @param {string} searchCriteria.value - Value to search for
- * @param {boolean} searchCriteria.exact - Exact match (default: true)
- * @param {boolean} searchCriteria.caseSensitive - Case sensitive (default: false)
- * @param {Array<string>} columnNames - Column names
+ * @param {Object} criteria - Search criteria {columnIndex, value, operator}
+ * @param {Array<Object>} configuredColumns - Configured columns
  * 
- * @returns {Object} Search results
+ * @returns {Object} Search result
  */
-export function searchProductAdvanced(rows, searchCriteria, columnNames) {
+export function searchProductAdvanced(rows, criteria, configuredColumns) {
   const startTime = Date.now();
 
   if (!Array.isArray(rows) || rows.length === 0) {
     return {
       found: false,
-      results: [],
-      totalFound: 0,
+      product: null,
+      rowIndex: -1,
+      totalRows: 0,
       searchTime: Date.now() - startTime
     };
   }
 
-  // Find column index by name
-  const searchColumnIndex = columnNames.indexOf(searchCriteria.columnName);
-  if (searchColumnIndex === -1) {
+  const { columnIndex, value, operator = 'equals' } = criteria;
+
+  if (columnIndex < 0 || columnIndex >= (rows[0]?.length || 0)) {
     return {
       found: false,
-      results: [],
-      error: `Column "${searchCriteria.columnName}" not found`,
-      totalFound: 0,
+      product: null,
+      error: `Invalid search column index: ${columnIndex}`,
+      rowIndex: -1,
+      totalRows: rows.length,
       searchTime: Date.now() - startTime
     };
   }
 
-  const results = [];
-  const searchValue = searchCriteria.value.toString();
-  const exact = searchCriteria.exact !== false;
-  const caseSensitive = searchCriteria.caseSensitive === true;
-
+  // Search with operator
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
 
-    if (searchColumnIndex >= row.length) {
+    if (columnIndex >= row.length) {
       continue;
     }
 
-    let cellValue = row[searchColumnIndex].toString();
-    let compareValue = searchValue;
-
-    if (!caseSensitive) {
-      cellValue = cellValue.toLowerCase();
-      compareValue = compareValue.toLowerCase();
-    }
-
+    const cellValue = row[columnIndex].toString().trim();
+    const searchValue = value.toString().trim();
     let matches = false;
 
-    if (exact) {
-      matches = cellValue.trim() === compareValue.trim();
-    } else {
-      matches = cellValue.includes(compareValue);
+    switch (operator) {
+      case 'equals':
+        matches = cellValue === searchValue;
+        break;
+      case 'contains':
+        matches = cellValue.includes(searchValue);
+        break;
+      case 'startsWith':
+        matches = cellValue.startsWith(searchValue);
+        break;
+      case 'endsWith':
+        matches = cellValue.endsWith(searchValue);
+        break;
+      case 'greaterThan':
+        matches = parseFloat(cellValue) > parseFloat(searchValue);
+        break;
+      case 'lessThan':
+        matches = parseFloat(cellValue) < parseFloat(searchValue);
+        break;
+      default:
+        matches = cellValue === searchValue;
     }
 
     if (matches) {
-      const product = rowToObject(row, columnNames);
+      const product = rowToObject(row, configuredColumns);
 
-      results.push({
+      return {
+        found: true,
         product: product,
-        rowIndex: i
-      });
+        rowIndex: i,
+        totalRows: rows.length,
+        searchTime: Date.now() - startTime
+      };
     }
   }
 
   return {
-    found: results.length > 0,
-    results: results,
-    totalFound: results.length,
+    found: false,
+    product: null,
+    rowIndex: -1,
+    totalRows: rows.length,
     searchTime: Date.now() - startTime
   };
 }
@@ -286,185 +351,122 @@ export function searchProductAdvanced(rows, searchCriteria, columnNames) {
  * @param {Array<Array<string>>} rows - Parsed CSV rows
  * @param {Array<string>} productIds - Product IDs to search
  * @param {number} searchColumnIndex - Column index to search in
- * @param {Array<string>} columnNames - Column names
+ * @param {Array<Object>} configuredColumns - Configured columns
  * 
  * @returns {Object} Search results
  */
-export function searchMultipleProducts(rows, productIds, searchColumnIndex, columnNames) {
+export function searchMultipleProducts(rows, productIds, searchColumnIndex, configuredColumns) {
   const startTime = Date.now();
   const results = [];
-  let foundCount = 0;
-  let notFoundCount = 0;
 
-  for (const productId of productIds) {
-    const result = searchProductInRows(rows, productId, searchColumnIndex, columnNames);
+  if (!Array.isArray(productIds)) {
+    return {
+      found: false,
+      products: [],
+      totalFound: 0,
+      totalRows: rows.length,
+      searchTime: Date.now() - startTime
+    };
+  }
 
+  productIds.forEach((productId) => {
+    const result = searchProductInRows(rows, productId, searchColumnIndex, configuredColumns);
     if (result.found) {
-      foundCount++;
-      results.push({
-        productId: productId,
-        ...result
-      });
-    } else {
-      notFoundCount++;
-      results.push({
-        productId: productId,
-        found: false,
-        product: null,
-        rowIndex: -1
-      });
+      results.push(result);
     }
-  }
-
-  return {
-    found: foundCount > 0,
-    results: results,
-    totalFound: foundCount,
-    totalNotFound: notFoundCount,
-    totalSearched: productIds.length,
-    totalSearchTime: Date.now() - startTime
-  };
-}
-
-/**
- * Filter rows by multiple criteria
- * 
- * @param {Array<Array<string>>} rows - Parsed CSV rows
- * @param {Array<Object>} filters - Filter criteria
- * @param {string} filters[].columnName - Column to filter
- * @param {string} filters[].value - Value to match
- * @param {string} filters[].operator - Operator (eq, contains, gt, lt, gte, lte)
- * @param {Array<string>} columnNames - Column names
- * @param {number} limit - Maximum results (optional)
- * 
- * @returns {Object} Filtered results
- */
-export function filterProducts(rows, filters, columnNames, limit = null) {
-  const startTime = Date.now();
-
-  if (!Array.isArray(rows) || rows.length === 0) {
-    return {
-      found: false,
-      results: [],
-      totalFound: 0,
-      filterTime: Date.now() - startTime
-    };
-  }
-
-  // Validate filters
-  const validatedFilters = [];
-  for (const filter of filters) {
-    const columnIndex = columnNames.indexOf(filter.columnName);
-    if (columnIndex === -1) {
-      continue; // Skip invalid column
-    }
-
-    validatedFilters.push({
-      columnIndex: columnIndex,
-      value: filter.value.toString(),
-      operator: filter.operator || 'eq'
-    });
-  }
-
-  if (validatedFilters.length === 0) {
-    return {
-      found: false,
-      results: [],
-      error: 'No valid filters provided',
-      totalFound: 0,
-      filterTime: Date.now() - startTime
-    };
-  }
-
-  const results = [];
-
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i];
-    let matchesAllFilters = true;
-
-    for (const filter of validatedFilters) {
-      if (filter.columnIndex >= row.length) {
-        matchesAllFilters = false;
-        break;
-      }
-
-      const cellValue = row[filter.columnIndex].toString();
-      const filterValue = filter.value;
-
-      let matches = false;
-
-      switch (filter.operator) {
-        case 'eq':
-          matches = cellValue.trim() === filterValue.trim();
-          break;
-        case 'contains':
-          matches = cellValue.toLowerCase().includes(filterValue.toLowerCase());
-          break;
-        case 'gt':
-          matches = parseFloat(cellValue) > parseFloat(filterValue);
-          break;
-        case 'lt':
-          matches = parseFloat(cellValue) < parseFloat(filterValue);
-          break;
-        case 'gte':
-          matches = parseFloat(cellValue) >= parseFloat(filterValue);
-          break;
-        case 'lte':
-          matches = parseFloat(cellValue) <= parseFloat(filterValue);
-          break;
-        default:
-          matches = cellValue === filterValue;
-      }
-
-      if (!matches) {
-        matchesAllFilters = false;
-        break;
-      }
-    }
-
-    if (matchesAllFilters) {
-      const product = rowToObject(row, columnNames);
-
-      results.push({
-        product: product,
-        rowIndex: i
-      });
-
-      if (limit && results.length >= limit) {
-        break;
-      }
-    }
-  }
+  });
 
   return {
     found: results.length > 0,
-    results: results,
+    products: results,
     totalFound: results.length,
-    filterTime: Date.now() - startTime
+    totalRows: rows.length,
+    searchTime: Date.now() - startTime
   };
 }
 
 /**
- * Get all products as objects
+ * Filter products by criteria
  * 
  * @param {Array<Array<string>>} rows - Parsed CSV rows
- * @param {Array<string>} columnNames - Column names
+ * @param {Object} filterCriteria - Filter criteria
+ * @param {Array<Object>} configuredColumns - Configured columns
+ * 
+ * @returns {Object} Filtered results
+ */
+export function filterProducts(rows, filterCriteria, configuredColumns) {
+  const startTime = Date.now();
+  const results = [];
+
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return {
+      products: [],
+      totalFound: 0,
+      totalRows: 0,
+      searchTime: Date.now() - startTime
+    };
+  }
+
+  rows.forEach((row, idx) => {
+    let matches = true;
+
+    for (const [columnIndex, value] of Object.entries(filterCriteria)) {
+      const colIdx = parseInt(columnIndex);
+      if (colIdx >= row.length || row[colIdx].toString().trim() !== value.toString().trim()) {
+        matches = false;
+        break;
+      }
+    }
+
+    if (matches) {
+      results.push({
+        product: rowToObject(row, configuredColumns),
+        rowIndex: idx
+      });
+    }
+  });
+
+  return {
+    products: results,
+    totalFound: results.length,
+    totalRows: rows.length,
+    searchTime: Date.now() - startTime
+  };
+}
+
+/**
+ * Get all products
+ * 
+ * @param {Array<Array<string>>} rows - Parsed CSV rows
+ * @param {Array<Object>} configuredColumns - Configured columns
  * 
  * @returns {Object} All products
  */
-export function getAllProducts(rows, columnNames) {
+export function getAllProducts(rows, configuredColumns) {
   const startTime = Date.now();
+  const results = [];
 
-  const products = rows.map((row, idx) => ({
-    product: rowToObject(row, columnNames),
-    rowIndex: idx
-  }));
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return {
+      products: [],
+      totalFound: 0,
+      totalRows: 0,
+      searchTime: Date.now() - startTime
+    };
+  }
+
+  rows.forEach((row, idx) => {
+    results.push({
+      product: rowToObject(row, configuredColumns),
+      rowIndex: idx
+    });
+  });
 
   return {
-    found: products.length > 0,
-    products: products,
-    totalProducts: products.length,
-    loadTime: Date.now() - startTime
+    products: results,
+    totalFound: results.length,
+    totalRows: rows.length,
+    searchTime: Date.now() - startTime
   };
 }
 
@@ -479,10 +481,13 @@ export function getAllProducts(rows, columnNames) {
 export function createIndex(rows, columnIndex) {
   const index = {};
 
-  rows.forEach((row, rowIndex) => {
+  rows.forEach((row, idx) => {
     if (columnIndex < row.length) {
       const key = row[columnIndex].toString().trim();
-      index[key] = rowIndex;
+      if (!index[key]) {
+        index[key] = [];
+      }
+      index[key].push(idx);
     }
   });
 
@@ -492,19 +497,18 @@ export function createIndex(rows, columnIndex) {
 /**
  * Search using index (O(1) lookup)
  * 
- * @param {Object} index - Index map
+ * @param {Object} index - Index map from createIndex()
  * @param {Array<Array<string>>} rows - Parsed CSV rows
- * @param {string} productId - Product ID to search
- * @param {Array<string>} columnNames - Column names
+ * @param {string} searchValue - Value to search
+ * @param {Array<Object>} configuredColumns - Configured columns
  * 
  * @returns {Object} Search result
  */
-export function searchWithIndex(index, rows, productId, columnNames) {
+export function searchWithIndex(index, rows, searchValue, configuredColumns) {
   const startTime = Date.now();
-  const key = productId.toString().trim();
-  const rowIndex = index[key];
+  const key = searchValue.toString().trim();
 
-  if (rowIndex === undefined) {
+  if (!index[key] || index[key].length === 0) {
     return {
       found: false,
       product: null,
@@ -514,12 +518,12 @@ export function searchWithIndex(index, rows, productId, columnNames) {
     };
   }
 
+  const rowIndex = index[key][0];
   const row = rows[rowIndex];
-  const product = rowToObject(row, columnNames);
 
   return {
     found: true,
-    product: product,
+    product: rowToObject(row, configuredColumns),
     rowIndex: rowIndex,
     totalRows: rows.length,
     searchTime: Date.now() - startTime
@@ -530,123 +534,80 @@ export function searchWithIndex(index, rows, productId, columnNames) {
  * Validate CSV structure
  * 
  * @param {Array<Array<string>>} rows - Parsed CSV rows
- * @param {Array<string>} columnNames - Expected column names
+ * @param {Array<Object>} configuredColumns - Configured columns
  * 
  * @returns {Object} Validation result
  */
-export function validateCSVStructure(rows, columnNames) {
+export function validateCSVStructure(rows, configuredColumns) {
   const errors = [];
   const warnings = [];
 
   if (!Array.isArray(rows) || rows.length === 0) {
-    errors.push('CSV has no data rows');
+    errors.push('No rows found in CSV');
     return { valid: false, errors, warnings };
   }
 
-  if (!Array.isArray(columnNames) || columnNames.length === 0) {
-    errors.push('No column names provided');
-    return { valid: false, errors, warnings };
-  }
-
-  // Check row consistency
-  const expectedColumnCount = columnNames.length;
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i];
-    if (row.length !== expectedColumnCount) {
-      errors.push(
-        `Row ${i}: expected ${expectedColumnCount} columns, found ${row.length}`
-      );
+  // Check if all configured column indices exist
+  configuredColumns.forEach((col) => {
+    if (col.index < 0) {
+      errors.push(`Column "${col.name}": Invalid index ${col.index}`);
     }
-  }
 
-  // Check for empty values
-  let emptyValueCount = 0;
-  for (const row of rows) {
-    for (const cell of row) {
-      if (!cell || cell.trim() === '') {
-        emptyValueCount++;
+    // Check if index exists in at least one row
+    let indexExists = false;
+    for (const row of rows) {
+      if (col.index < row.length) {
+        indexExists = true;
+        break;
       }
     }
-  }
 
-  if (emptyValueCount > 0) {
-    warnings.push(`Found ${emptyValueCount} empty cells`);
+    if (!indexExists) {
+      errors.push(`Column "${col.name}": Index ${col.index} not found in any row`);
+    }
+  });
+
+  // Check for inconsistent row lengths
+  const lengths = rows.map(r => r.length);
+  const minLength = Math.min(...lengths);
+  const maxLength = Math.max(...lengths);
+
+  if (minLength !== maxLength) {
+    warnings.push(`Inconsistent row lengths: ${minLength} to ${maxLength}`);
   }
 
   return {
     valid: errors.length === 0,
-    errors: errors,
-    warnings: warnings,
-    rowCount: rows.length,
-    columnCount: expectedColumnCount,
-    emptyValueCount: emptyValueCount
+    errors,
+    warnings
   };
 }
 
 /**
- * Get statistics about CSV data
+ * Get CSV statistics
  * 
  * @param {Array<Array<string>>} rows - Parsed CSV rows
- * @param {Array<string>} columnNames - Column names
+ * @param {Array<Object>} configuredColumns - Configured columns
  * 
  * @returns {Object} Statistics
  */
-export function getCSVStatistics(rows, columnNames) {
-  const stats = {
+export function getCSVStatistics(rows, configuredColumns) {
+  return {
     totalRows: rows.length,
-    totalColumns: columnNames.length,
-    totalCells: rows.length * columnNames.length,
-    emptyCount: 0,
-    columnStats: {}
+    totalColumns: rows.length > 0 ? rows[0].length : 0,
+    configuredColumns: configuredColumns.length,
+    columnNames: configuredColumns.map(c => c.name),
+    columnIndices: configuredColumns.map(c => c.index),
+    dataTypes: configuredColumns.map(c => c.dataType)
   };
-
-  // Initialize column stats
-  columnNames.forEach(colName => {
-    stats.columnStats[colName] = {
-      emptyCount: 0,
-      uniqueValues: new Set(),
-      minLength: Infinity,
-      maxLength: 0
-    };
-  });
-
-  // Calculate statistics
-  for (const row of rows) {
-    for (let i = 0; i < columnNames.length; i++) {
-      const colName = columnNames[i];
-      const cellValue = row[i] || '';
-
-      if (!cellValue || cellValue.trim() === '') {
-        stats.emptyCount++;
-        stats.columnStats[colName].emptyCount++;
-      } else {
-        stats.columnStats[colName].uniqueValues.add(cellValue);
-        const length = cellValue.length;
-        stats.columnStats[colName].minLength = Math.min(
-          stats.columnStats[colName].minLength,
-          length
-        );
-        stats.columnStats[colName].maxLength = Math.max(
-          stats.columnStats[colName].maxLength,
-          length
-        );
-      }
-    }
-  }
-
-  // Convert Sets to counts
-  columnNames.forEach(colName => {
-    stats.columnStats[colName].uniqueCount = stats.columnStats[colName].uniqueValues.size;
-    delete stats.columnStats[colName].uniqueValues;
-  });
-
-  return stats;
 }
 
+// Export all functions
 export default {
   parseCSVLine,
   parseCSVContent,
   extractHeader,
+  formatValue,
   rowToObject,
   searchProductInRows,
   searchProductAdvanced,

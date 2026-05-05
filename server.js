@@ -450,7 +450,7 @@ app.post('/api/product/search', async (req, res) => {
       rows,
       productId,
       searchColumnIndex,
-      parserConfig.columnNames
+      parserConfig.columns  // Pass configured columns (with indices and data types)
     );
 
     console.log(`[PRODUCT SEARCH] Result: ${result.found ? 'FOUND' : 'NOT FOUND'}`);
@@ -653,7 +653,7 @@ app.post('/api/product/search-multiple', async (req, res) => {
       rows,
       productIds,
       searchColumnIndex,
-      parserConfig.columnNames
+      parserConfig.columns  // Pass configured columns
     );
 
     console.log(`[MULTIPLE SEARCH] Found: ${result.totalFound}/${result.totalSearched}`);
@@ -837,7 +837,10 @@ app.get('/api/product/all', async (req, res) => {
     );
 
     // Get all products
-    const result = csvUtils.getAllProducts(rows, parserConfig.columnNames);
+    const result = csvUtils.getAllProducts(
+      rows,
+      parserConfig.columns  // Pass configured columns
+    );
 
     console.log(`[GET ALL] Loaded: ${result.totalProducts} products`);
     res.json(result);
