@@ -14,6 +14,7 @@ import { dirname, join } from 'path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from 'fs';
 import NetworkPathHandlerWindows from './backend/network-path-handler-windows.js';
 import CredentialCrypto from './backend/credential-crypto.js';
+import * as csvUtils from './backend/csv-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -328,6 +329,580 @@ app.post('/api/connector/read-file', async (req, res) => {
 });
 
 /**
+ * POST /api/product/search
+ * Search for a product by identifier
+ * 
+ * Request body:
+ * {
+ *   "productId": "ASP001",
+ *   "searchColumnIndex": 1,
+ *   "returnAllColumns": true
+ * }
+ * 
+ * Response:
+ * {
+ *   "found": true,
+ *   "product": {...},
+ *   "rowIndex": 42,
+ *   "totalRows": 131,
+ *   "searchTime": 245
+ * }
+ */
+app.post('/api/product/search', async (req, res) => {
+  try {
+    const { productId, searchColumnIndex, returnAllColumns } = req.body;
+
+    // Validate input
+    if (!productId || searchColumnIndex === undefined) {
+      return res.status(400).json({
+        error: 'Missing required fields: productId, searchColumnIndex',
+        found: false
+      });
+    }
+
+    // Load saved configuration
+    if (!existsSync(CONFIG_FILE)) {
+      return res.status(400).json({
+        error: 'No saved configuration found. Please configure connector first.',
+        found: false
+      });
+    }
+
+    const configData = readFileSync(CONFIG_FILE, 'utf-8');
+    const config = JSON.parse(configData);
+    const connectorConfig = config.connection;
+    const parserConfig = config.parser;
+
+    console.log(`[PRODUCT SEARCH] Searching for: ${productId}`);
+
+    // Initialize CredentialCrypto
+    let credentialCrypto = null;
+    if (process.env.ENCRYPTION_SECRET) {
+      credentialCrypto = new CredentialCrypto(process.env.ENCRYPTION_SECRET);
+    }
+
+    const handler = new NetworkPathHandlerWindows(credentialCrypto);
+
+    // Decrypt password
+    let password = connectorConfig.password;
+    if (credentialCrypto && password) {
+      try {
+        password = await credentialCrypto.decrypt(password);
+      } catch (error) {
+        console.error('[PRODUCT SEARCH] Decryption error:', error.message);
+        password = connectorConfig.password;
+      }
+    }
+
+    // Read file
+    const fileContent = await handler.readFile({
+      path: connectorConfig.path,
+      filename: connectorConfig.filename,
+      username: connectorConfig.username || null,
+      password: password || null,
+      domain: connectorConfig.domain || null
+    });
+
+    if (!fileContent) {
+      return res.status(400).json({
+        error: 'Failed to read file',
+        found: false
+      });
+    }
+
+    // Parse CSV
+    const rows = csvUtils.parseCSVContent(
+      fileContent,
+      parserConfig.delimiter,
+      parserConfig.hasHeader,
+      parserConfig.quoteChar,
+      parserConfig.escapeChar
+    );
+
+    // Search for product
+    const result = csvUtils.searchProductInRows(
+      rows,
+      productId,
+      searchColumnIndex,
+      parserConfig.columnNames
+    );
+
+    console.log(`[PRODUCT SEARCH] Result: ${result.found ? 'FOUND' : 'NOT FOUND'}`);
+    res.json(result);
+
+  } catch (error) {
+    console.error('[PRODUCT SEARCH ERROR]', error.message);
+    res.status(500).json({
+      error: error.message,
+      found: false
+    });
+  }
+});
+
+/**
+ * POST /api/product/search-advanced
+ * Advanced search with multiple criteria
+ * 
+ * Request body:
+ * {
+ *   "searchCriteria": {
+ *     "columnName": "MedicationName",
+ *     "value": "Aspirin",
+ *     "exact": false,
+ *     "caseSensitive": false
+ *   }
+ * }
+ */
+app.post('/api/product/search-advanced', async (req, res) => {
+  try {
+    const { searchCriteria } = req.body;
+
+    if (!searchCriteria || !searchCriteria.columnName || !searchCriteria.value) {
+      return res.status(400).json({
+        error: 'Missing required fields: searchCriteria with columnName and value',
+        found: false
+      });
+    }
+
+    // Load configuration
+    if (!existsSync(CONFIG_FILE)) {
+      return res.status(400).json({
+        error: 'No saved configuration found',
+        found: false
+      });
+    }
+
+    const configData = readFileSync(CONFIG_FILE, 'utf-8');
+    const config = JSON.parse(configData);
+    const connectorConfig = config.connection;
+    const parserConfig = config.parser;
+
+    console.log(`[ADVANCED SEARCH] Searching: ${searchCriteria.columnName} = ${searchCriteria.value}`);
+
+    // Initialize CredentialCrypto
+    let credentialCrypto = null;
+    if (process.env.ENCRYPTION_SECRET) {
+      credentialCrypto = new CredentialCrypto(process.env.ENCRYPTION_SECRET);
+    }
+
+    const handler = new NetworkPathHandlerWindows(credentialCrypto);
+
+    // Decrypt password
+    let password = connectorConfig.password;
+    if (credentialCrypto && password) {
+      try {
+        password = await credentialCrypto.decrypt(password);
+      } catch (error) {
+        console.error('[ADVANCED SEARCH] Decryption error:', error.message);
+        password = connectorConfig.password;
+      }
+    }
+
+    // Read file
+    const fileContent = await handler.readFile({
+      path: connectorConfig.path,
+      filename: connectorConfig.filename,
+      username: connectorConfig.username || null,
+      password: password || null,
+      domain: connectorConfig.domain || null
+    });
+
+    if (!fileContent) {
+      return res.status(400).json({
+        error: 'Failed to read file',
+        found: false
+      });
+    }
+
+    // Parse CSV
+    const rows = csvUtils.parseCSVContent(
+      fileContent,
+      parserConfig.delimiter,
+      parserConfig.hasHeader,
+      parserConfig.quoteChar,
+      parserConfig.escapeChar
+    );
+
+    // Advanced search
+    const result = csvUtils.searchProductAdvanced(
+      rows,
+      searchCriteria,
+      parserConfig.columnNames
+    );
+
+    console.log(`[ADVANCED SEARCH] Found: ${result.totalFound} results`);
+    res.json(result);
+
+  } catch (error) {
+    console.error('[ADVANCED SEARCH ERROR]', error.message);
+    res.status(500).json({
+      error: error.message,
+      found: false
+    });
+  }
+});
+
+/**
+ * POST /api/product/search-multiple
+ * Search for multiple products
+ * 
+ * Request body:
+ * {
+ *   "productIds": ["ASP001", "IBU002", "ACE003"],
+ *   "searchColumnIndex": 1
+ * }
+ */
+app.post('/api/product/search-multiple', async (req, res) => {
+  try {
+    const { productIds, searchColumnIndex } = req.body;
+
+    if (!Array.isArray(productIds) || productIds.length === 0 || searchColumnIndex === undefined) {
+      return res.status(400).json({
+        error: 'Missing required fields: productIds (array), searchColumnIndex',
+        found: false
+      });
+    }
+
+    // Load configuration
+    if (!existsSync(CONFIG_FILE)) {
+      return res.status(400).json({
+        error: 'No saved configuration found',
+        found: false
+      });
+    }
+
+    const configData = readFileSync(CONFIG_FILE, 'utf-8');
+    const config = JSON.parse(configData);
+    const connectorConfig = config.connection;
+    const parserConfig = config.parser;
+
+    console.log(`[MULTIPLE SEARCH] Searching for ${productIds.length} products`);
+
+    // Initialize CredentialCrypto
+    let credentialCrypto = null;
+    if (process.env.ENCRYPTION_SECRET) {
+      credentialCrypto = new CredentialCrypto(process.env.ENCRYPTION_SECRET);
+    }
+
+    const handler = new NetworkPathHandlerWindows(credentialCrypto);
+
+    // Decrypt password
+    let password = connectorConfig.password;
+    if (credentialCrypto && password) {
+      try {
+        password = await credentialCrypto.decrypt(password);
+      } catch (error) {
+        console.error('[MULTIPLE SEARCH] Decryption error:', error.message);
+        password = connectorConfig.password;
+      }
+    }
+
+    // Read file
+    const fileContent = await handler.readFile({
+      path: connectorConfig.path,
+      filename: connectorConfig.filename,
+      username: connectorConfig.username || null,
+      password: password || null,
+      domain: connectorConfig.domain || null
+    });
+
+    if (!fileContent) {
+      return res.status(400).json({
+        error: 'Failed to read file',
+        found: false
+      });
+    }
+
+    // Parse CSV
+    const rows = csvUtils.parseCSVContent(
+      fileContent,
+      parserConfig.delimiter,
+      parserConfig.hasHeader,
+      parserConfig.quoteChar,
+      parserConfig.escapeChar
+    );
+
+    // Search multiple
+    const result = csvUtils.searchMultipleProducts(
+      rows,
+      productIds,
+      searchColumnIndex,
+      parserConfig.columnNames
+    );
+
+    console.log(`[MULTIPLE SEARCH] Found: ${result.totalFound}/${result.totalSearched}`);
+    res.json(result);
+
+  } catch (error) {
+    console.error('[MULTIPLE SEARCH ERROR]', error.message);
+    res.status(500).json({
+      error: error.message,
+      found: false
+    });
+  }
+});
+
+/**
+ * POST /api/product/filter
+ * Filter products by criteria
+ * 
+ * Request body:
+ * {
+ *   "filters": [
+ *     {"columnName": "Status", "value": "Active"},
+ *     {"columnName": "Price", "value": "10", "operator": "lt"}
+ *   ],
+ *   "limit": 50
+ * }
+ */
+app.post('/api/product/filter', async (req, res) => {
+  try {
+    const { filters, limit } = req.body;
+
+    if (!Array.isArray(filters) || filters.length === 0) {
+      return res.status(400).json({
+        error: 'Missing required fields: filters (array)',
+        found: false
+      });
+    }
+
+    // Load configuration
+    if (!existsSync(CONFIG_FILE)) {
+      return res.status(400).json({
+        error: 'No saved configuration found',
+        found: false
+      });
+    }
+
+    const configData = readFileSync(CONFIG_FILE, 'utf-8');
+    const config = JSON.parse(configData);
+    const connectorConfig = config.connection;
+    const parserConfig = config.parser;
+
+    console.log(`[FILTER] Applying ${filters.length} filter(s)`);
+
+    // Initialize CredentialCrypto
+    let credentialCrypto = null;
+    if (process.env.ENCRYPTION_SECRET) {
+      credentialCrypto = new CredentialCrypto(process.env.ENCRYPTION_SECRET);
+    }
+
+    const handler = new NetworkPathHandlerWindows(credentialCrypto);
+
+    // Decrypt password
+    let password = connectorConfig.password;
+    if (credentialCrypto && password) {
+      try {
+        password = await credentialCrypto.decrypt(password);
+      } catch (error) {
+        console.error('[FILTER] Decryption error:', error.message);
+        password = connectorConfig.password;
+      }
+    }
+
+    // Read file
+    const fileContent = await handler.readFile({
+      path: connectorConfig.path,
+      filename: connectorConfig.filename,
+      username: connectorConfig.username || null,
+      password: password || null,
+      domain: connectorConfig.domain || null
+    });
+
+    if (!fileContent) {
+      return res.status(400).json({
+        error: 'Failed to read file',
+        found: false
+      });
+    }
+
+    // Parse CSV
+    const rows = csvUtils.parseCSVContent(
+      fileContent,
+      parserConfig.delimiter,
+      parserConfig.hasHeader,
+      parserConfig.quoteChar,
+      parserConfig.escapeChar
+    );
+
+    // Filter
+    const result = csvUtils.filterProducts(
+      rows,
+      filters,
+      parserConfig.columnNames,
+      limit || null
+    );
+
+    console.log(`[FILTER] Found: ${result.totalFound} results`);
+    res.json(result);
+
+  } catch (error) {
+    console.error('[FILTER ERROR]', error.message);
+    res.status(500).json({
+      error: error.message,
+      found: false
+    });
+  }
+});
+
+/**
+ * GET /api/product/all
+ * Get all products
+ */
+app.get('/api/product/all', async (req, res) => {
+  try {
+    // Load configuration
+    if (!existsSync(CONFIG_FILE)) {
+      return res.status(400).json({
+        error: 'No saved configuration found',
+        found: false
+      });
+    }
+
+    const configData = readFileSync(CONFIG_FILE, 'utf-8');
+    const config = JSON.parse(configData);
+    const connectorConfig = config.connection;
+    const parserConfig = config.parser;
+
+    console.log('[GET ALL] Loading all products');
+
+    // Initialize CredentialCrypto
+    let credentialCrypto = null;
+    if (process.env.ENCRYPTION_SECRET) {
+      credentialCrypto = new CredentialCrypto(process.env.ENCRYPTION_SECRET);
+    }
+
+    const handler = new NetworkPathHandlerWindows(credentialCrypto);
+
+    // Decrypt password
+    let password = connectorConfig.password;
+    if (credentialCrypto && password) {
+      try {
+        password = await credentialCrypto.decrypt(password);
+      } catch (error) {
+        console.error('[GET ALL] Decryption error:', error.message);
+        password = connectorConfig.password;
+      }
+    }
+
+    // Read file
+    const fileContent = await handler.readFile({
+      path: connectorConfig.path,
+      filename: connectorConfig.filename,
+      username: connectorConfig.username || null,
+      password: password || null,
+      domain: connectorConfig.domain || null
+    });
+
+    if (!fileContent) {
+      return res.status(400).json({
+        error: 'Failed to read file',
+        found: false
+      });
+    }
+
+    // Parse CSV
+    const rows = csvUtils.parseCSVContent(
+      fileContent,
+      parserConfig.delimiter,
+      parserConfig.hasHeader,
+      parserConfig.quoteChar,
+      parserConfig.escapeChar
+    );
+
+    // Get all products
+    const result = csvUtils.getAllProducts(rows, parserConfig.columnNames);
+
+    console.log(`[GET ALL] Loaded: ${result.totalProducts} products`);
+    res.json(result);
+
+  } catch (error) {
+    console.error('[GET ALL ERROR]', error.message);
+    res.status(500).json({
+      error: error.message,
+      found: false
+    });
+  }
+});
+
+/**
+ * GET /api/product/stats
+ * Get CSV statistics
+ */
+app.get('/api/product/stats', async (req, res) => {
+  try {
+    // Load configuration
+    if (!existsSync(CONFIG_FILE)) {
+      return res.status(400).json({
+        error: 'No saved configuration found'
+      });
+    }
+
+    const configData = readFileSync(CONFIG_FILE, 'utf-8');
+    const config = JSON.parse(configData);
+    const connectorConfig = config.connection;
+    const parserConfig = config.parser;
+
+    console.log('[STATS] Calculating statistics');
+
+    // Initialize CredentialCrypto
+    let credentialCrypto = null;
+    if (process.env.ENCRYPTION_SECRET) {
+      credentialCrypto = new CredentialCrypto(process.env.ENCRYPTION_SECRET);
+    }
+
+    const handler = new NetworkPathHandlerWindows(credentialCrypto);
+
+    // Decrypt password
+    let password = connectorConfig.password;
+    if (credentialCrypto && password) {
+      try {
+        password = await credentialCrypto.decrypt(password);
+      } catch (error) {
+        console.error('[STATS] Decryption error:', error.message);
+        password = connectorConfig.password;
+      }
+    }
+
+    // Read file
+    const fileContent = await handler.readFile({
+      path: connectorConfig.path,
+      filename: connectorConfig.filename,
+      username: connectorConfig.username || null,
+      password: password || null,
+      domain: connectorConfig.domain || null
+    });
+
+    if (!fileContent) {
+      return res.status(400).json({
+        error: 'Failed to read file'
+      });
+    }
+
+    // Parse CSV
+    const rows = csvUtils.parseCSVContent(
+      fileContent,
+      parserConfig.delimiter,
+      parserConfig.hasHeader,
+      parserConfig.quoteChar,
+      parserConfig.escapeChar
+    );
+
+    // Get statistics
+    const stats = csvUtils.getCSVStatistics(rows, parserConfig.columnNames);
+
+    console.log('[STATS] Calculated');
+    res.json(stats);
+
+  } catch (error) {
+    console.error('[STATS ERROR]', error.message);
+    res.status(500).json({
+      error: error.message
+    });
+  }
+});
+
+/**
  * GET /
  * Serve main page
  */
@@ -375,6 +950,12 @@ app.listen(PORT, () => {
   console.log(`✔ Config API: POST /api/config/save`);
   console.log(`✔ Config API: GET /api/config/load`);
   console.log(`✔ Config API: DELETE /api/config/clear`);
+  console.log(`✔ Product API: POST /api/product/search`);
+  console.log(`✔ Product API: POST /api/product/search-advanced`);
+  console.log(`✔ Product API: POST /api/product/search-multiple`);
+  console.log(`✔ Product API: POST /api/product/filter`);
+  console.log(`✔ Product API: GET /api/product/all`);
+  console.log(`✔ Product API: GET /api/product/stats`);
   console.log(`✔ Config file: ${CONFIG_FILE}`);
   console.log(`\n${'='.repeat(50)}\n`);
 });
