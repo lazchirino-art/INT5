@@ -583,19 +583,49 @@ function removeRow(element) {
  * Wrapper functions to call ParserUI methods from HTML onclick
  * These ensure ParserUI is available when called
  */
+
+// Flag to track ParserUI initialization
+let parserUIReady = false;
+
+// Set flag when ParserUI is ready
+document.addEventListener('DOMContentLoaded', () => {
+  setTimeout(() => {
+    parserUIReady = true;
+    console.log('[Wrapper] ParserUI is ready');
+  }, 100);
+});
+
 function addParserColumn() {
-  if (window.ParserUI) {
+  if (window.ParserUI && parserUIReady) {
     window.ParserUI.addParserColumn();
   } else {
-    console.error('[Wrapper] ParserUI not available');
+    console.warn('[Wrapper] ParserUI not ready yet, waiting...');
+    // Wait a bit and try again
+    setTimeout(() => {
+      if (window.ParserUI) {
+        window.ParserUI.addParserColumn();
+        parserUIReady = true;
+      } else {
+        console.error('[Wrapper] ParserUI still not available');
+      }
+    }, 200);
   }
 }
 
 function removeParserColumn(element) {
-  if (window.ParserUI) {
+  if (window.ParserUI && parserUIReady) {
     window.ParserUI.removeParserColumn(element);
   } else {
-    console.error('[Wrapper] ParserUI not available');
+    console.warn('[Wrapper] ParserUI not ready yet, waiting...');
+    // Wait a bit and try again
+    setTimeout(() => {
+      if (window.ParserUI) {
+        window.ParserUI.removeParserColumn(element);
+        parserUIReady = true;
+      } else {
+        console.error('[Wrapper] ParserUI still not available');
+      }
+    }, 200);
   }
 }
 
