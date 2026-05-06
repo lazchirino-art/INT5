@@ -239,8 +239,9 @@ class ParserUI {
 
   /**
    * Update column names when hasHeader changes
-   * If hasHeader changes to 'No', generate auto column names
-   * If hasHeader changes to 'Yes', keep existing names
+   * Logic:
+   * - If changing to 'No': Generate auto column names (Column0, Column1, etc.)
+   * - If changing to 'Yes': Clear names and disable Check button (user must enter names)
    */
   static updateColumnNamesForHeaderChange() {
     const hasHeader = document.getElementById('parserHasHeader')?.value;
@@ -256,11 +257,24 @@ class ParserUI {
         const nameInput = row.querySelector('input[type="text"]');
         if (nameInput) {
           nameInput.value = `Column${idx}`;
+          nameInput.disabled = true;  // Disable editing when auto-generated
         }
       });
       console.log('[ParserUI] Updated column names to auto-generated (Column0, Column1, ...)');
+    } else if (hasHeader === 'Yes') {
+      // Clear names and enable editing
+      rows.forEach((row) => {
+        const nameInput = row.querySelector('input[type="text"]');
+        if (nameInput) {
+          nameInput.value = '';  // Clear
+          nameInput.disabled = false;  // Enable editing
+        }
+      });
+      console.log('[ParserUI] Cleared column names - user must enter them manually');
     }
-    // If hasHeader = 'Yes', keep existing names (user can edit them)
+    
+    // Update button state
+    this.updateCheckButtonState();
   }
 
   static getParserConfig() {
@@ -547,8 +561,21 @@ class ParserUI {
 
     const isConnectorReady = this.isConnectorReady();
     const hasColumns = this.getUserColumns().length > 0;
-
-    checkButton.disabled = !(isConnectorReady && hasColumns);
+    const hasHeader = document.getElementById('parserHasHeader')?.value;
+    
+    // Logic:
+    // - If hasHeader = 'No': Enable if connector ready AND has columns
+    // - If hasHeader = 'Yes': Enable if connector ready AND all columns have names
+    let canCheck = isConnectorReady && hasColumns;
+    
+    if (hasHeader === 'Yes' && canCheck) {
+      // Check if all columns have names
+      const columns = this.getUserColumns();
+      const allNamed = columns.every(col => col.name && col.name.trim() !== '');
+      canCheck = allNamed;
+    }
+    
+    checkButton.disabled = !canCheck;
   }
 
   /**
