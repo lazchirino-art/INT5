@@ -458,12 +458,6 @@ class ParserUI {
       console.error('[ParserUI] Error populating mapping table:', error);
     }
   }
-      }
-    } catch (error) {
-      console.error('[ParserUI] Error saving configuration:', error);
-      alert('Error saving configuration: ' + error.message);
-    }
-  }
 
   // ==================== COLUMN MANAGEMENT ====================
   /**
