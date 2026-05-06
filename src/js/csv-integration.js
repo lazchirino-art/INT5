@@ -577,6 +577,28 @@ function removeRow(element) {
  * Initialize application when DOM is ready
  * Loads saved configuration and initializes UI components
  */
+
+// ==================== PARSER UI WRAPPERS ====================
+/**
+ * Wrapper functions to call ParserUI methods from HTML onclick
+ * These ensure ParserUI is available when called
+ */
+function addParserColumn() {
+  if (window.ParserUI) {
+    window.ParserUI.addParserColumn();
+  } else {
+    console.error('[Wrapper] ParserUI not available');
+  }
+}
+
+function removeParserColumn(element) {
+  if (window.ParserUI) {
+    window.ParserUI.removeParserColumn(element);
+  } else {
+    console.error('[Wrapper] ParserUI not available');
+  }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   console.log('[App] Initializing CSV Integration...');
   
