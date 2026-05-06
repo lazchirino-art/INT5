@@ -649,10 +649,10 @@ class ParserUI {
 }
 
 // ==================== INITIALIZATION ====================
+// Export to global scope IMMEDIATELY (before DOMContentLoaded)
+window.ParserUI = ParserUI;
+
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
   ParserUI.init();
 });
-
-// Export to global scope
-window.ParserUI = ParserUI;
