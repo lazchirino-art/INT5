@@ -66,11 +66,22 @@ class CSVParser {
 
       // 6. Parse columns
       const firstDataRowIndex = configHasHeader ? 1 : 0;
-      const headerLine = lines[0];
-      const columnNames = this.parseCSVLine(headerLine, delimiter, quoteChar, escapeChar);
+      
+      let columnNames;
+      if (configHasHeader) {
+        // If file has header, parse first line as column names
+        const headerLine = lines[0];
+        columnNames = this.parseCSVLine(headerLine, delimiter, quoteChar, escapeChar);
+      } else {
+        // If no header, generate auto column names from first data row
+        const firstDataLine = lines[0];
+        const firstDataRow = this.parseCSVLine(firstDataLine, delimiter, quoteChar, escapeChar);
+        columnNames = firstDataRow.map((_, idx) => `Column${idx}`);
+        logs.push({ type: 'info', message: `Auto-generated column names: ${columnNames.join(', ')}` });
+      }
 
       if (!columnNames || columnNames.length === 0) {
-        errors.push('Failed to parse header row');
+        errors.push('Failed to parse columns');
         return this.buildResult('FAILED', logs, errors, warnings);
       }
 

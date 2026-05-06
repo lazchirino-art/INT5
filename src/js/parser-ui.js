@@ -407,12 +407,51 @@ class ParserUI {
       if (result.success) {
         console.log('[ParserUI] Parser configuration saved successfully');
         alert('Parser configuration saved successfully');
+        await this.populateMappingTableFromParser(config.parser.columns);
         
         // Also save to localStorage for offline access (optional)
         localStorage.setItem('menuCsvInt.parserConfig', JSON.stringify(config));
       } else {
         console.error('[ParserUI] Error saving configuration:', result.error);
         alert('Error saving configuration: ' + result.error);
+
+  /**
+   * Populate Mapping table from Parser configuration
+   * Called after Parser configuration is saved
+   */
+  static async populateMappingTableFromParser(columns) {
+    try {
+      console.log('[ParserUI] Populating Mapping table from Parser configuration...');
+
+      const mappingBody = document.getElementById('mappingBody');
+      if (!mappingBody) {
+        console.warn('[ParserUI] Mapping table not found');
+        return;
+      }
+
+      // Clear existing rows
+      mappingBody.innerHTML = '';
+
+      // Create row for each column
+      if (columns && Array.isArray(columns)) {
+        columns.forEach((col) => {
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td><input type="text" value="${col.name}" disabled></td>
+            <td><input type="number" value="${col.index}" disabled></td>
+            <td><input type="text" placeholder="system_field_name" class="system-field"></td>
+            <td><input type="text" placeholder="transformation()" class="transformation"></td>
+            <td><span class="delete-btn" onclick="removeRow(this)">x</span></td>
+          `;
+          mappingBody.appendChild(row);
+        });
+
+        console.log(`[ParserUI] Mapping table populated with ${columns.length} rows`);
+      }
+    } catch (error) {
+      console.error('[ParserUI] Error populating mapping table:', error);
+    }
+  }
       }
     } catch (error) {
       console.error('[ParserUI] Error saving configuration:', error);
