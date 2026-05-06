@@ -59,9 +59,14 @@ class ConfigLoader {
       console.log('[ConfigLoader] Network Path configuration loaded successfully');
       
       // Also load Parser configuration if available
-      const parserLoaded = await ParserUI.loadAndRenderParserConfig();
-      if (parserLoaded) {
-        console.log('[ConfigLoader] Parser configuration also loaded');
+      // Wait for ParserUI to be available
+      if (window.ParserUI) {
+        const parserLoaded = await window.ParserUI.loadAndRenderParserConfig();
+        if (parserLoaded) {
+          console.log('[ConfigLoader] Parser configuration also loaded');
+        }
+      } else {
+        console.warn('[ConfigLoader] ParserUI not available yet, skipping parser config load');
       }
       
       return true;
