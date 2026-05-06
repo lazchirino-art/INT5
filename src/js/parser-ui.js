@@ -35,7 +35,13 @@ class ParserUI {
       '#parserDelimiter, #parserHasHeader, #parserQuoteChar, #parserEscapeChar'
     );
     inputs.forEach(input => {
-      input.addEventListener('change', () => this.resetParserState());
+      input.addEventListener('change', (e) => {
+        // If hasHeader changed, update column names
+        if (e.target.id === 'parserHasHeader') {
+          this.updateColumnNamesForHeaderChange();
+        }
+        this.resetParserState();
+      });
     });
 
     this.updateCheckButtonState();
@@ -230,6 +236,33 @@ class ParserUI {
   /**
    * Get parser configuration from form inputs
    */
+
+  /**
+   * Update column names when hasHeader changes
+   * If hasHeader changes to 'No', generate auto column names
+   * If hasHeader changes to 'Yes', keep existing names
+   */
+  static updateColumnNamesForHeaderChange() {
+    const hasHeader = document.getElementById('parserHasHeader')?.value;
+    const columnsBody = document.getElementById('columnsBody');
+    
+    if (!columnsBody) return;
+    
+    const rows = columnsBody.querySelectorAll('tr');
+    
+    if (hasHeader === 'No') {
+      // Generate auto column names
+      rows.forEach((row, idx) => {
+        const nameInput = row.querySelector('input[type="text"]');
+        if (nameInput) {
+          nameInput.value = `Column${idx}`;
+        }
+      });
+      console.log('[ParserUI] Updated column names to auto-generated (Column0, Column1, ...)');
+    }
+    // If hasHeader = 'Yes', keep existing names (user can edit them)
+  }
+
   static getParserConfig() {
     return {
       delimiter: document.getElementById('parserDelimiter')?.value || ',',
