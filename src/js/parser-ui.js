@@ -414,6 +414,12 @@ class ParserUI {
       } else {
         console.error('[ParserUI] Error saving configuration:', result.error);
         alert('Error saving configuration: ' + result.error);
+      }
+    } catch (error) {
+      console.error('[ParserUI] Error saving configuration:', error);
+      alert('Error saving configuration: ' + error.message);
+    }
+  }
 
   /**
    * Populate Mapping table from Parser configuration
