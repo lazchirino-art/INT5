@@ -98,28 +98,29 @@ class NetworkPathHandlerWindows {
 				  // Skip empty lines
 				  if (!line.length) return false;
 				  
-				  // Skip header lines (Directory:, Mode, ----, LastWriteTime, etc.)
-				  if (line.startsWith('Directory:') || 
-				      line.startsWith('Mode') ||
-				      line === '----' ||
-				      line.startsWith('-----') ||
-				      line.startsWith('LastWriteTime') ||
-				      line.startsWith('Length')) return false;
+				  // Skip header/summary lines
+				  if (line.startsWith('Volume') || 
+				      line.startsWith('Directory') ||
+				      line.startsWith('File(s)') ||
+				      line.startsWith('Dir(s)') ||
+				      line === '.' ||
+				      line === '..' ||
+				      line.startsWith('Serial')) return false;
 				  
-				  // File lines start with '-a', '-d', or similar mode indicators
-				  // Format: -a----        08/05/2026      5:08          15797 Filename
-				  if (!/^-[a-z-]+\s+\d/.test(line)) return false;
+				  // File lines start with date (DD/MM/YYYY or MM/DD/YYYY)
+				  // Format: 08/05/2026 05:08          15.797 Filename
+				  if (!/^\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}/.test(line)) return false;
 				  
 				  return true;
 			})
 			.map(line => {
-			  // Extract filename from: -a----        08/05/2026      5:08          15797 Filename
-			  // Skip: mode(0), date(1), time(2), size(3), then get the rest as filename
+			  // Extract filename from: 08/05/2026 05:08          15.797 Filename
+			  // Split by whitespace, take everything from index 3 onwards
 			  const parts = line.split(/\s+/);
 			  
-			  // Take everything from index 4 onwards (handles filenames with spaces)
-			  if (parts.length > 4) {
-				return parts.slice(4).join(' ');
+			  // Take everything from index 3 onwards (handles filenames with spaces)
+			  if (parts.length > 3) {
+				return parts.slice(3).join(' ');
 			  }
 			  return null;
 			})
