@@ -93,9 +93,11 @@ class ParserUI {
       this.parserState.preview = result.preview || [];
 
       // Validate user columns against file structure
+      // Pass hasHeader to skip name comparison if hasHeader is 'No'
       const columnValidation = this.validateUserColumnsAgainstFile(
         userColumns,
-        result.fileColumnNames
+        result.fileColumnNames,
+        parserConfig.hasHeader
       );
 
       // Build final logs
@@ -144,6 +146,7 @@ class ParserUI {
       console.log('[ParserUI] FileColumnNames:', result.fileColumnNames);
       console.log('[ParserUI] UserColumns:', userColumns);
       console.log('[ParserUI] ColumnValidation:', columnValidation);
+      console.log('[ParserUI] HasHeader:', parserConfig.hasHeader);
 
       // Show preview and enable save if no column errors
       if (columnValidation.errors.length === 0) {
@@ -175,8 +178,9 @@ class ParserUI {
   /**
    * Validate user columns against file columns
    * Checks that configured column indices exist in the file
+   * Note: Only compares names if hasHeader is 'Yes'
    */
-  static validateUserColumnsAgainstFile(userColumns, fileColumns) {
+  static validateUserColumnsAgainstFile(userColumns, fileColumns, hasHeader = 'Yes') {
     const errors = [];
     const warnings = [];
 
@@ -191,12 +195,16 @@ class ParserUI {
         return;
       }
 
-      // Check if column name matches (error if mismatch)
-      const fileColumnName = fileColumns[colIndex];
-      if (userCol.name.toLowerCase() !== fileColumnName.toLowerCase()) {
-        errors.push(
-          `Column "${userCol.name}" at index ${colIndex}: file has "${fileColumnName}"`
-        );
+      // Only compare column names if hasHeader is 'Yes'
+      // If hasHeader is 'No', we use auto-generated names (Column0, Column1, etc.)
+      // so comparing names doesn't make sense
+      if (hasHeader === 'Yes') {
+        const fileColumnName = fileColumns[colIndex];
+        if (userCol.name.toLowerCase() !== fileColumnName.toLowerCase()) {
+          errors.push(
+            `Column "${userCol.name}" at index ${colIndex}: file has "${fileColumnName}"`
+          );
+        }
       }
     });
 
@@ -238,10 +246,12 @@ class ParserUI {
    */
 
   /**
+  /**
    * Update column names when hasHeader changes
    * Logic:
-   * - If changing to 'No': Generate auto column names (Column0, Column1, etc.)
-   * - If changing to 'Yes': Clear names and disable Check button (user must enter names)
+   * - If changing to 'No': Generate auto column names based on column index (Column0, Column1, etc.)
+   *   and disable editing
+   * - If changing to 'Yes': Enable editing for column names
    */
   static updateColumnNamesForHeaderChange() {
     const hasHeader = document.getElementById('parserHasHeader')?.value;
@@ -252,25 +262,31 @@ class ParserUI {
     const rows = columnsBody.querySelectorAll('tr');
     
     if (hasHeader === 'No') {
-      // Generate auto column names
-      rows.forEach((row, idx) => {
+      // Generate auto column names based on column index
+      rows.forEach((row) => {
         const nameInput = row.querySelector('input[type="text"]');
-        if (nameInput) {
-          nameInput.value = `Column${idx}`;
+        const indexInput = row.querySelector('input[type="number"]');
+        
+        if (nameInput && indexInput) {
+          const colIndex = parseInt(indexInput.value) || 0;
+          nameInput.value = `Column${colIndex}`;
           nameInput.disabled = true;  // Disable editing when auto-generated
         }
       });
       console.log('[ParserUI] Updated column names to auto-generated (Column0, Column1, ...)');
     } else if (hasHeader === 'Yes') {
-      // Clear names and enable editing
+      // Enable editing for column names
       rows.forEach((row) => {
         const nameInput = row.querySelector('input[type="text"]');
         if (nameInput) {
-          nameInput.value = '';  // Clear
+          // If the name is auto-generated (ColumnX), clear it
+          if (nameInput.value.match(/^Column\d+$/)) {
+            nameInput.value = '';  // Clear auto-generated names
+          }
           nameInput.disabled = false;  // Enable editing
         }
       });
-      console.log('[ParserUI] Cleared column names - user must enter them manually');
+      console.log('[ParserUI] Enabled column name editing - user must enter names manually');
     }
     
     // Update button state
