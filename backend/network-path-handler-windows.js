@@ -92,12 +92,12 @@ class NetworkPathHandlerWindows {
 		if (stdout) {
 		  const lines = stdout.split('\n');
 
-		  files = lines
-			.map(line => line.trim())
-			.filter(line => line.endsWith('.csv'))
-			.map(line => {
-			  const parts = line.split(/\s+/);
-			  return parts[parts.length - 1];
+			files = lines
+				.map(line => line.trim())
+				.filter(line => line.length > 0)  // Accept all files, pattern filtering happens later
+				.map(line => {
+				  const parts = line.split(/\s+/);
+				  return parts[parts.length - 1];
 			});
 		}
 
