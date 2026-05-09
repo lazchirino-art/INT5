@@ -61,7 +61,10 @@ class NetworkPathHandlerWindows {
 		  }
 
 		  // CON credenciales
-		  return `cmd /c "net use ${escapedPath} /delete /y & net use ${escapedPath} /user:${credentials.username} ${credentials.password} && powershell -Command \"Get-ChildItem \\\"${escapedPath}\\\" -Force | Select-Object Name | ConvertTo-Csv -NoTypeInformation\""`;
+		  // Use PowerShell directly for better command handling
+		  const psScript = `Get-ChildItem "${escapedPath}" -Force | Select-Object Name | ConvertTo-Csv -NoTypeInformation`;
+		  const encodedScript = Buffer.from(psScript).toString('base64');
+		  return `cmd /c "net use ${escapedPath} /delete /y & net use ${escapedPath} /user:${credentials.username} ${credentials.password} && powershell -EncodedCommand ${encodedScript}"`;
 		}
 
   /**
