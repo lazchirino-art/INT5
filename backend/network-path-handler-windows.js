@@ -80,9 +80,9 @@ class NetworkPathHandlerWindows {
       }
 
       const { stdout, stderr } = await execAsync(psCommand, { timeout: 10000 });
-	  this.addLog(`STDOUT: ${stdout}`);
-	  this.addLog(`STDERR: ${stderr}`);
-	  this.addLog(`RAW OUTPUT: ${stdout}`);
+	  //this.addLog(`STDOUT: ${stdout}`);
+	  //this.addLog(`STDERR: ${stderr}`);
+	  //this.addLog(`RAW OUTPUT: ${stdout}`);
       if (stderr && !stderr.includes('Warning')) {
         throw new Error(stderr);
       }
@@ -103,9 +103,10 @@ class NetworkPathHandlerWindows {
 				      line.startsWith('Directory') ||
 				      line.startsWith('File(s)') ||
 				      line.startsWith('Dir(s)') ||
-				      line === '.' ||
-				      line === '..' ||
 				      line.startsWith('Serial')) return false;
+				  
+				  // Skip directory markers (. and ..)
+				  if (line.trim() === '.' || line.trim() === '..') return false;
 				  
 				  // File lines start with date (DD/MM/YYYY or MM/DD/YYYY)
 				  // Format: 08/05/2026 05:08          15.797 Filename
@@ -129,7 +130,7 @@ class NetworkPathHandlerWindows {
 
       this.addLog('Folder accessible');
       this.addLog(`Files found: ${files.length}`);
-	  this.addLog(`Files detected: ${JSON.stringify(files)}`);
+	  //this.addLog(`Files detected: ${JSON.stringify(files)}`);
 	  
       return files;
     } catch (error) {
