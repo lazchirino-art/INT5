@@ -525,6 +525,7 @@ class ParserUI {
   // ==================== COLUMN MANAGEMENT ====================
   /**
    * Add new column row to table
+   * If hasHeader='No', automatically generates column name and disables editing
    */
   static addParserColumn() {
     const columnsBody = document.getElementById('columnsBody');
@@ -534,10 +535,16 @@ class ParserUI {
     const rowCount = columnsBody.querySelectorAll('tr').length;
     const nextIndex = rowCount;
 
+    // Check current hasHeader state
+    const hasHeader = document.getElementById('parserHasHeader')?.value;
+    const isAutoNaming = hasHeader === 'No';
+    const columnName = isAutoNaming ? `Column${nextIndex}` : '';
+    const isDisabled = isAutoNaming ? 'disabled' : '';
+
     // Create new row
     const row = document.createElement('tr');
     row.innerHTML = `
-      <td><input type="text" placeholder="Column name" /></td>
+      <td><input type="text" placeholder="Column name" value="${columnName}" ${isDisabled} /></td>
       <td><input type="number" min="0" value="${nextIndex}" placeholder="Index" /></td>
       <td><select>
         <option value="String">String</option>
