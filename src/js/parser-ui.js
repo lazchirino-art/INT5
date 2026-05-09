@@ -16,7 +16,7 @@ class ParserUI {
 
   // ==================== INITIALIZATION ====================
   /**
-   * Initialize parser tab - attach event listeners
+   * Initialize parser tab - attach event listeners and load saved configuration
    */
   static init() {
     const checkButton = document.getElementById('checkConfigButton');
@@ -32,7 +32,7 @@ class ParserUI {
 
     // Reset state when parser inputs change
     const inputs = document.querySelectorAll(
-      '#parserDelimiter, #parserHasHeader, #parserQuoteChar, #parserEscapeChar'
+      '#parserDelimiter, #parserHasHeader, #parserQuoteChar, #parserEscapeChar, #parserDateFormat, #parserDecimalSeparator, #parserEmptyValue'
     );
     inputs.forEach(input => {
       input.addEventListener('change', (e) => {
@@ -44,6 +44,8 @@ class ParserUI {
       });
     });
 
+    // Load saved parser configuration from backend
+    this.loadAndRenderParserConfig();
     this.updateCheckButtonState();
   }
 
@@ -692,6 +694,23 @@ class ParserUI {
         escapeCharInput.value = parserConfig.escapeChar || '"';
       }
 
+      // Load additional parser settings
+      const dateFormatInput = document.getElementById('parserDateFormat');
+      const decimalSeparatorInput = document.getElementById('parserDecimalSeparator');
+      const emptyValueInput = document.getElementById('parserEmptyValue');
+
+      if (dateFormatInput) {
+        dateFormatInput.value = parserConfig.dateFormat || '';
+      }
+
+      if (decimalSeparatorInput) {
+        decimalSeparatorInput.value = parserConfig.decimalSeparator || '';
+      }
+
+      if (emptyValueInput) {
+        emptyValueInput.value = parserConfig.emptyValue || '';
+      }
+
       console.log('[ParserUI] Parsing settings loaded');
 
       // 2. Render Expected Columns table
@@ -702,8 +721,10 @@ class ParserUI {
 
           parserConfig.columns.forEach((col) => {
             const row = document.createElement('tr');
+            // Disable name input if hasHeader is 'No' (auto-generated names)
+            const isDisabled = parserConfig.hasHeader === 'No' ? 'disabled' : '';
             row.innerHTML = `
-              <td><input type="text" value="${col.name}" placeholder="column_name"></td>
+              <td><input type="text" value="${col.name}" placeholder="column_name" ${isDisabled}></td>
               <td><input type="number" value="${col.index}" placeholder="index" min="0"></td>
               <td>
                 <select>
@@ -720,6 +741,13 @@ class ParserUI {
           console.log(`[ParserUI] Loaded ${parserConfig.columns.length} columns`);
         }
       }
+
+      // Add event listeners to new inputs for state management
+      const inputs = document.querySelectorAll('#columnsBody input, #columnsBody select');
+      inputs.forEach(input => {
+        input.addEventListener('input', () => this.updateCheckButtonState());
+        input.addEventListener('change', () => this.updateCheckButtonState());
+      });
 
       console.log('[ParserUI] Parser configuration rendered successfully');
       return true;
