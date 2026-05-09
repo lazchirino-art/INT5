@@ -52,17 +52,17 @@ class NetworkPathHandlerWindows {
   /**
    * Build PowerShell command with credentials
    */
-	buildPowerShellCommand(path, credentials) {
-	  const escapedPath = path.replace(/"/g, '\\"');
+		buildPowerShellCommand(path, credentials) {
+		  const escapedPath = path.replace(/"/g, '\\"');
 
-	  // SIN credenciales
-	  if (!credentials.username || !credentials.password) {
-		return `cmd /c dir ${escapedPath}`;
-	  }
+		  // SIN credenciales
+		  if (!credentials.username || !credentials.password) {
+			return `powershell -Command "Get-ChildItem \"${escapedPath}\" -Force | Select-Object Name | ConvertTo-Csv -NoTypeInformation"`;
+		  }
 
-	  // CON credenciales
-	  return `cmd /c "net use ${escapedPath} /delete /y & net use ${escapedPath} /user:${credentials.username} ${credentials.password} && dir ${escapedPath}"`;
-	}
+		  // CON credenciales
+		  return `cmd /c "net use ${escapedPath} /delete /y & net use ${escapedPath} /user:${credentials.username} ${credentials.password} && powershell -Command \"Get-ChildItem \\\"${escapedPath}\\\" -Force | Select-Object Name | ConvertTo-Csv -NoTypeInformation\""`;
+		}
 
   /**
    * List files via PowerShell
@@ -89,50 +89,34 @@ class NetworkPathHandlerWindows {
 
       let files = [];
 
-		if (stdout) {
-		  const lines = stdout.split('\n');
+if (stdout) {
+  const lines = stdout.split('\n');
 
-			// Filter lines to extract only actual files
-			// Dir output format: DATE TIME SIZE/DIR NAME
-			// We need to skip header lines and summary lines
-			files = lines
-				.map(line => line.trim())
-				.filter(line => {
-				  // Skip empty lines
-				  if (!line.length) return false;
-				  
-				  // Skip lines that start with 'Volume', 'Directory', 'File(s)', 'Dir(s)'
-				  if (/^(Volume|Directory|File\(s\)|Dir\(s\)|bytes|The system)/.test(line)) return false;
-				  
-				  // Skip lines that are only dots or special dir markers
-				  if (/^\.\.?$/.test(line)) return false;
-				  
-				  // Valid file lines have date pattern at start (MM/DD/YYYY HH:MM)
-				  if (!/^\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}/.test(line)) return false;
-				  
-				  return true;
-			})
-			.map(line => {
-			  // Extract filename from dir output
-			  // Format: MM/DD/YYYY HH:MM AM/PM SIZE/DIR FILENAME
-			  // We need to skip date, time, AM/PM, and size/DIR columns
-			  const parts = line.split(/\s+/);
-			  
-			  // Skip: date(0), time(1), am/pm(2), size/dir(3), then get the rest as filename
-			  // Some filenames have spaces, so join from index 4 onwards
-			  if (parts.length > 4) {
-				// Check if index 3 is <DIR> or a number (file size)
-				if (parts[3] === '<DIR>') {
-				  // It's a directory, skip it
-				  return null;
-				}
-				// It's a file, extract filename
-				return parts.slice(4).join(' ');
-			  }
-			  return null;
-		})
-		.filter(file => file !== null && file.length > 0);
-		}
+  // Parse CSV format from Get-ChildItem | ConvertTo-Csv
+  // Format: "Name"
+  //         "filename.txt"
+  //         "another.csv"
+  files = lines
+    .map(line => line.trim())
+    .filter(line => {
+      // Skip empty lines
+      if (!line.length) return false;
+      
+      // Skip header line ("Name")
+      if (line === '"Name"' || line === 'Name') return false;
+      
+      // Skip CSV type information line
+      if (line.startsWith('#TYPE')) return false;
+      
+      return true;
+    })
+    .map(line => {
+      // Extract filename from CSV quoted format: "filename.txt"
+      // Remove surrounding quotes
+      return line.replace(/^"|"$/g, '');
+    })
+    .filter(file => file && file.length > 0);
+}
 
       this.addLog('Folder accessible');
       this.addLog(`Files found: ${files.length}`);
