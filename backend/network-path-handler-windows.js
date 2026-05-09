@@ -52,20 +52,17 @@ class NetworkPathHandlerWindows {
   /**
    * Build PowerShell command with credentials
    */
-		buildPowerShellCommand(path, credentials) {
-		  const escapedPath = path.replace(/"/g, '\\"');
+	buildPowerShellCommand(path, credentials) {
+	  const escapedPath = path.replace(/"/g, '\\"');
 
-		  // SIN credenciales
-		  if (!credentials.username || !credentials.password) {
-			return `powershell -Command "Get-ChildItem \"${escapedPath}\" -Force | Select-Object Name | ConvertTo-Csv -NoTypeInformation"`;
-		  }
+	  // SIN credenciales
+	  if (!credentials.username || !credentials.password) {
+		return `cmd /c dir ${escapedPath}`;
+	  }
 
-		  // CON credenciales
-		  // Use PowerShell directly for better command handling
-		  const psScript = `Get-ChildItem "${escapedPath}" -Force | Select-Object Name | ConvertTo-Csv -NoTypeInformation`;
-		  const encodedScript = Buffer.from(psScript).toString('base64');
-		  return `cmd /c "net use ${escapedPath} /delete /y & net use ${escapedPath} /user:${credentials.username} ${credentials.password} && powershell -EncodedCommand ${encodedScript}"`;
-		}
+	  // CON credenciales
+	  return `cmd /c "net use ${escapedPath} /delete /y & net use ${escapedPath} /user:${credentials.username} ${credentials.password} && dir ${escapedPath}"`;
+	}
 
   /**
    * List files via PowerShell
@@ -92,34 +89,17 @@ class NetworkPathHandlerWindows {
 
       let files = [];
 
-if (stdout) {
-  const lines = stdout.split('\n');
+		if (stdout) {
+		  const lines = stdout.split('\n');
 
-  // Parse CSV format from Get-ChildItem | ConvertTo-Csv
-  // Format: "Name"
-  //         "filename.txt"
-  //         "another.csv"
-  files = lines
-    .map(line => line.trim())
-    .filter(line => {
-      // Skip empty lines
-      if (!line.length) return false;
-      
-      // Skip header line ("Name")
-      if (line === '"Name"' || line === 'Name') return false;
-      
-      // Skip CSV type information line
-      if (line.startsWith('#TYPE')) return false;
-      
-      return true;
-    })
-    .map(line => {
-      // Extract filename from CSV quoted format: "filename.txt"
-      // Remove surrounding quotes
-      return line.replace(/^"|"$/g, '');
-    })
-    .filter(file => file && file.length > 0);
-}
+			files = lines
+				.map(line => line.trim())
+				.filter(line => line.length > 0)  // Accept all files, pattern filtering happens later
+				.map(line => {
+				  const parts = line.split(/\s+/);
+				  return parts[parts.length - 1];
+			});
+		}
 
       this.addLog('Folder accessible');
       this.addLog(`Files found: ${files.length}`);
