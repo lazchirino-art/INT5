@@ -94,11 +94,36 @@ class NetworkPathHandlerWindows {
 
 			files = lines
 				.map(line => line.trim())
-				.filter(line => line.length > 0)  // Accept all files, pattern filtering happens later
-				.map(line => {
-				  const parts = line.split(/\s+/);
-				  return parts[parts.length - 1];
-			});
+				.filter(line => {
+				  // Skip empty lines
+				  if (!line.length) return false;
+				  
+				  // Skip header lines (Directory:, Mode, ----, LastWriteTime, etc.)
+				  if (line.startsWith('Directory:') || 
+				      line.startsWith('Mode') ||
+				      line === '----' ||
+				      line.startsWith('-----') ||
+				      line.startsWith('LastWriteTime') ||
+				      line.startsWith('Length')) return false;
+				  
+				  // File lines start with '-a', '-d', or similar mode indicators
+				  // Format: -a----        08/05/2026      5:08          15797 Filename
+				  if (!/^-[a-z-]+\s+\d/.test(line)) return false;
+				  
+				  return true;
+			})
+			.map(line => {
+			  // Extract filename from: -a----        08/05/2026      5:08          15797 Filename
+			  // Skip: mode(0), date(1), time(2), size(3), then get the rest as filename
+			  const parts = line.split(/\s+/);
+			  
+			  // Take everything from index 4 onwards (handles filenames with spaces)
+			  if (parts.length > 4) {
+				return parts.slice(4).join(' ');
+			  }
+			  return null;
+			})
+			.filter(file => file && file.length > 0);
 		}
 
       this.addLog('Folder accessible');
