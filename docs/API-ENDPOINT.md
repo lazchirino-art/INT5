@@ -1,237 +1,381 @@
-# API Endpoint - Network Path Handler
+# API Reference — INT5
 
-## Overview
+Base URL: `http://localhost:3000` (o `http://int5:3000` / `http://int5.local:3000`)
 
-Simple backend API for testing network path connections and detecting files.
+---
 
-**Architecture:**
-```
-Frontend (UI) → HTTP POST → Backend → SMB → Network Share
-```
+## Índice
 
-## Endpoint
+- [Configuración](#configuración)
+- [Conector](#conector)
+- [Importación (endpoint principal)](#importación-endpoint-principal)
+- [Sync Log](#sync-log)
+- [Búsqueda y consulta](#búsqueda-y-consulta)
 
-### POST /test-connection
+---
 
-Test connection to a network path and detect a file matching a pattern.
+## Configuración
 
-## Request
+### `POST /api/config/save`
 
-**URL:** `POST http://localhost:3000/test-connection`
+Guarda una sección de la configuración. Cada tab guarda únicamente su sección; el backend hace merge con las demás.
 
-**Headers:**
-```
-Content-Type: application/json
-```
+**Secciones disponibles:** `connection` | `parser` | `mapping` | `validation` | `persistence`
 
-**Body:**
+**Ejemplo — guardar mapping:**
 ```json
 {
-  "path": "\\\\server\\share\\folder",
-  "username": "username",
-  "password": "password",
-  "domain": "DOMAIN",
-  "pattern": "*.csv"
+  "mapping": [
+    { "csvColumn": "MedCode",   "index": 0, "jsonTag": "code",   "include": true },
+    { "csvColumn": "MedName",   "index": 1, "jsonTag": "name",   "include": true },
+    { "csvColumn": "InternalId","index": 2, "jsonTag": "id",     "include": false }
+  ]
 }
 ```
 
-**Parameters:**
+**Respuesta:**
+```json
+{
+  "status": "SUCCESS",
+  "message": "Configuration saved"
+}
+```
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `path` | string | Yes | UNC path (\\\\server\\share\\folder) |
-| `username` | string | Yes | Username for authentication |
-| `password` | string | Yes | Password for authentication |
-| `domain` | string | No | Domain (e.g., COMPANY) |
-| `pattern` | string | Yes | File pattern (e.g., data_*.csv) |
+---
 
-## Response
+### `GET /api/config/load`
 
-**Success (file found):**
+Devuelve la configuración completa guardada.
+
+**Respuesta (con configuración):**
+```json
+{
+  "status": "SUCCESS",
+  "config": {
+    "connection":  { ... },
+    "parser":      { ... },
+    "mapping":     [ ... ],
+    "validation":  [ ... ],
+    "persistence": { "triggerMode": "auto" }
+  }
+}
+```
+
+**Respuesta (sin configuración):**
+```json
+{ "status": "NOT_FOUND", "config": null }
+```
+
+---
+
+### `DELETE /api/config/clear`
+
+Elimina la configuración guardada. Crea un backup automático antes de borrar.
+
+**Respuesta:**
+```json
+{ "status": "SUCCESS", "message": "Configuration cleared" }
+```
+
+---
+
+## Conector
+
+### `POST /test-connection`
+
+Prueba la conexión SMB y detecta el archivo que coincide con el patrón. Usado por el Tab 1 del wizard.
+
+**Request:**
+```json
+{
+  "path":     "\\\\servidor\\compartida\\carpeta",
+  "username": "usuario",
+  "password": "contraseña",
+  "domain":   "DOMINIO",
+  "pattern":  "medications_*.csv"
+}
+```
+
+| Campo | Requerido | Descripción |
+|-------|-----------|-------------|
+| `path` | Sí | Ruta UNC (debe comenzar con `\\`) |
+| `pattern` | Sí | Patrón de archivo (`*` como wildcard) |
+| `username` | No | Usuario SMB |
+| `password` | No | Contraseña |
+| `domain` | No | Dominio Windows |
+
+**Respuesta (éxito):**
 ```json
 {
   "status": "READY",
-  "file": "data_2024.csv",
-  "logs": [
-    "Resolving path...",
-    "Connecting to network share...",
-    "Authentication successful",
-    "Folder accessible",
-    "Files found: 5",
-    "Matching files: 1",
-    "File selected: data_2024.csv"
-  ]
+  "file":   "medications_20260602.csv",
+  "logs":   ["✓ Folder accessible", "✓ File selected: medications_20260602.csv"]
 }
 ```
 
-**Failed (no file found):**
+**Respuesta (error):**
 ```json
 {
   "status": "FAILED",
-  "file": null,
-  "logs": [
-    "Resolving path...",
-    "Connecting to network share...",
-    "Authentication successful",
-    "Folder accessible",
-    "Files found: 3",
-    "Matching files: 0",
-    "Error: File not found"
-  ]
+  "file":   null,
+  "logs":   ["✗ Access is denied"]
 }
 ```
 
-**Failed (multiple files):**
+---
+
+### `POST /api/connector/read-file`
+
+Lee el contenido de un archivo CSV desde la ruta SMB. Usado internamente por el Tab 2 (Parser preview).
+
+**Request:**
 ```json
 {
-  "status": "FAILED",
-  "file": null,
-  "logs": [
-    "Resolving path...",
-    "Connecting to network share...",
-    "Authentication successful",
-    "Folder accessible",
-    "Files found: 5",
-    "Matching files: 3",
-    "Error: Multiple files found: data_2024.csv, data_2025.csv, data_backup.csv"
-  ]
+  "connectorType":    "networkPath",
+  "path":             "\\\\servidor\\compartida\\carpeta",
+  "fileNamePattern":  "*.csv",
+  "useAuthentication": true,
+  "username":         "usuario",
+  "password":         "contraseña"
 }
 ```
 
-**Failed (connection error):**
+**Respuesta:**
 ```json
 {
-  "status": "FAILED",
-  "file": null,
-  "logs": [
-    "Resolving path...",
-    "Connecting to network share...",
-    "Error: Connection failed: Server not reachable"
+  "content":  "col1,col2,col3\nval1,val2,val3\n...",
+  "filename": "medications_20260602.csv",
+  "size":     48320,
+  "encoding": "UTF-8"
+}
+```
+
+---
+
+## Importación (endpoint principal)
+
+### `POST /api/product/import`
+
+**Este es el endpoint que llama CORINA.** Busca el producto en el CSV, aplica mapping, valida campos requeridos, cachea el producto y registra el resultado en el sync log.
+
+**Request:**
+```json
+{
+  "productCode":       "ASP001",
+  "searchColumnIndex": 0,
+  "confirmed":         false
+}
+```
+
+| Campo | Requerido | Descripción |
+|-------|-----------|-------------|
+| `productCode` | Sí | Código del producto a buscar |
+| `searchColumnIndex` | Sí | Índice de la columna donde buscar (0-based) |
+| `confirmed` | No | `true` para confirmar en modo Manual (default: `false`) |
+
+**Respuestas:**
+
+**IMPORTED** — encontrado, validado e importado:
+```json
+{
+  "status":         "IMPORTED",
+  "productCode":    "ASP001",
+  "product":        { "code": "ASP001", "name": "Aspirina 100mg", "dose": "100mg" },
+  "fieldsImported": 3,
+  "rowIndex":       42
+}
+```
+
+**NOT_FOUND** — no existe en el CSV:
+```json
+{
+  "status":      "NOT_FOUND",
+  "productCode": "XYZ999"
+}
+```
+
+**VALIDATION_FAILED** — campo requerido vacío:
+```json
+{
+  "status":      "VALIDATION_FAILED",
+  "productCode": "ASP001",
+  "message":     "Product found in CSV but with incomplete data — field [dose] is empty"
+}
+```
+
+**CONFIRMATION_REQUIRED** — modo Manual, esperando confirmación:
+```json
+{
+  "status":      "CONFIRMATION_REQUIRED",
+  "productCode": "ASP001",
+  "message":     "Product \"ASP001\" found. Confirm import?",
+  "preview":     { "code": "ASP001", "name": "Aspirina 100mg", "dose": "100mg" }
+}
+```
+→ Para confirmar, reenviar con `"confirmed": true`.
+
+**ERROR** — fallo de configuración o conexión:
+```json
+{
+  "status": "ERROR",
+  "error":  "Parser not configured: no columns defined. Complete the Parser tab first."
+}
+```
+
+---
+
+## Sync Log
+
+### `GET /api/sync-log`
+
+Devuelve el historial de todas las llamadas a `/api/product/import`, ordenado del más reciente al más antiguo. Nunca se borra.
+
+**Query params:**
+
+| Parámetro | Default | Máx | Descripción |
+|-----------|---------|-----|-------------|
+| `page` | `1` | — | Página (1-based) |
+| `limit` | `20` | `100` | Entradas por página |
+
+**Ejemplo:** `GET /api/sync-log?page=2&limit=10`
+
+**Respuesta:**
+```json
+{
+  "entries": [
+    {
+      "id":             "1717430412345-823401",
+      "timestamp":      "2026-06-03T14:22:05.123Z",
+      "productCode":    "ASP001",
+      "result":         "FOUND",
+      "fieldsImported": 3,
+      "error":          ""
+    },
+    {
+      "id":             "1717430300000-100001",
+      "timestamp":      "2026-06-03T14:20:00.000Z",
+      "productCode":    "IBU999",
+      "result":         "NOT_FOUND",
+      "fieldsImported": 0,
+      "error":          ""
+    }
+  ],
+  "total":      42,
+  "page":       2,
+  "totalPages": 5
+}
+```
+
+**Valores posibles de `result`:**
+
+| Valor | Descripción |
+|-------|-------------|
+| `FOUND` | Importado correctamente |
+| `NOT_FOUND` | No existe en el CSV |
+| `VALIDATION_FAILED` | Campo requerido vacío |
+| `ERROR` | Error de sistema (conexión, config) |
+
+---
+
+## Búsqueda y consulta
+
+Estos endpoints son para consultas directas al CSV sin pasar por el flujo de validación/import.
+
+### `POST /api/product/search`
+
+Busca un producto por valor exacto en una columna.
+
+**Request:**
+```json
+{
+  "productId":         "ASP001",
+  "searchColumnIndex": 0
+}
+```
+
+**Respuesta:**
+```json
+{
+  "found":      true,
+  "product":    { "code": "ASP001", "name": "Aspirina 100mg" },
+  "rowIndex":   42,
+  "totalRows":  131,
+  "searchTime": 12
+}
+```
+
+---
+
+### `POST /api/product/search-advanced`
+
+Búsqueda con operador (`contains` / `equals`) y sensibilidad a mayúsculas.
+
+**Request:**
+```json
+{
+  "searchCriteria": {
+    "columnName":    "MedName",
+    "value":         "Aspirina",
+    "exact":         false,
+    "caseSensitive": false
+  }
+}
+```
+
+---
+
+### `POST /api/product/search-multiple`
+
+Busca varios códigos en una sola llamada.
+
+**Request:**
+```json
+{
+  "productIds":        ["ASP001", "IBU002", "ACE003"],
+  "searchColumnIndex": 0
+}
+```
+
+**Respuesta:**
+```json
+{
+  "products":   [ { "productId": "ASP001", "found": true, "product": {...}, "rowIndex": 42 }, ... ],
+  "totalFound": 2,
+  "totalSearched": 3
+}
+```
+
+---
+
+### `POST /api/product/filter`
+
+Filtra productos por múltiples columnas.
+
+**Request:**
+```json
+{
+  "filters": [
+    { "columnName": "Status", "value": "Active" }
   ]
 }
 ```
 
-## Response Fields
+---
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `status` | string | "READY" if success, "FAILED" if error |
-| `file` | string \| null | Selected filename if success, null otherwise |
-| `logs` | string[] | Array of log messages (step-by-step execution) |
+### `GET /api/product/all`
 
-## Patterns
+Devuelve todos los productos del CSV con mapping aplicado.
 
-### Wildcard (*)
-```
-data_*.csv       → data_2024.csv, data_2025.csv
-*_report.csv     → jan_report.csv, feb_report.csv
-*.csv            → any .csv file
-```
+---
 
-### Exact Match
-```
-data.csv         → only data.csv
-report_2024.csv  → only report_2024.csv
-```
+### `GET /api/product/stats`
 
-## Error Cases
+Estadísticas del CSV (total de filas, columnas, valores únicos, etc.).
 
-| Error | Cause | Solution |
-|-------|-------|----------|
-| Cannot resolve path | Invalid UNC format | Use \\\\server\\share format |
-| Connection failed | Server not reachable | Check server address and network |
-| Authentication failed | Invalid credentials | Verify username and password |
-| Access denied | Insufficient permissions | Use account with folder access |
-| Folder not found | Path doesn't exist | Check folder path |
-| File not found | No files match pattern | Check pattern or folder contents |
-| Multiple files found | Multiple matches | Use more specific pattern |
+---
 
-## Examples
+## Notas generales
 
-### JavaScript (Fetch)
-
-```javascript
-const client = new NetworkPathClient();
-
-const result = await client.testConnection({
-  path: '\\\\192.168.1.100\\shared\\data',
-  username: 'john',
-  password: 'secret123',
-  domain: 'COMPANY',
-  pattern: 'export_*.csv'
-});
-
-if (result.status === 'READY') {
-  console.log('File found:', result.file);
-} else {
-  console.log('Error:', result.logs);
-}
-```
-
-### cURL
-
-```bash
-curl -X POST http://localhost:3000/test-connection \
-  -H "Content-Type: application/json" \
-  -d '{
-    "path": "\\\\server\\share\\data",
-    "username": "user",
-    "password": "pass",
-    "pattern": "*.csv"
-  }'
-```
-
-### Python
-
-```python
-import requests
-
-response = requests.post('http://localhost:3000/test-connection', json={
-    'path': '\\\\server\\share\\data',
-    'username': 'user',
-    'password': 'pass',
-    'pattern': '*.csv'
-})
-
-result = response.json()
-print(result['status'])
-print(result['file'])
-for log in result['logs']:
-    print(log)
-```
-
-## Logging
-
-Logs show step-by-step execution:
-
-1. **Resolving path** - Parse UNC path
-2. **Connecting to network share** - Establish SMB connection
-3. **Authentication successful** - Credentials validated
-4. **Folder accessible** - Can access the folder
-5. **Files found: N** - Total files in folder
-6. **Matching files: M** - Files matching pattern
-7. **File selected: filename** - Selected file (if success)
-
-On error, logs stop at the failure point.
-
-## Security Notes
-
-- Passwords are NOT logged
-- Use HTTPS in production
-- Credentials should be encrypted in transit
-- Validate all inputs on backend
-
-## Implementation
-
-**Backend:** `backend/network-path-handler.js`
-**Server:** `server.js`
-**Client:** `src/js/network-path-client.js`
-
-## Running
-
-```bash
-npm install
-npm start
-```
-
-Server runs on `http://localhost:3000`
+- Todos los endpoints de producto usan `loadProductionContext()` — requieren que los tabs 1 y 2 estén configurados y guardados.
+- El mapping (Tab 3) se aplica a todos los endpoints: las claves del `product` en el response son los `jsonTag`, no los nombres de columna del CSV.
+- Los errores de configuración devuelven HTTP 400; los errores de servidor devuelven HTTP 500.

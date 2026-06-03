@@ -1,82 +1,45 @@
-# Instalación Completa - POC SMB Network Path
+# Instalación Completa — INT5
 
-**Para usuarios sin nada instalado: Git, Node.js, npm, etc.**
+**Para usuarios sin Node.js instalado.**
 
 ---
 
 ## Paso 1: Instalar Node.js
 
-### 1.1 Descargar Node.js
-
-1. Abre navegador y ve a: https://nodejs.org/
-2. Descarga la versión **LTS** (recomendada)
-3. Espera a que descargue el archivo `.msi`
-
-### 1.2 Instalar Node.js
-
-1. Abre el archivo descargado (`.msi`)
-2. Haz click en **"Next"** varias veces
-3. Acepta los términos y condiciones
-4. Haz click en **"Install"**
-5. Espera a que termine
-6. Haz click en **"Finish"**
-
-### 1.3 Verificar Instalación
-
-1. Abre **PowerShell** o **CMD**
-2. Ejecuta:
+1. Ve a [https://nodejs.org/](https://nodejs.org/)
+2. Descarga la versión **LTS**
+3. Ejecuta el instalador `.msi` → Next → Next → Install → Finish
+4. Verifica en PowerShell:
    ```powershell
    node --version
    npm --version
    ```
-3. Deberías ver versiones (ej: `v18.17.0`)
+   Deberías ver versiones (ej: `v20.11.0` / `10.2.4`)
 
 ---
 
-## Paso 2: Habilitar PowerShell (si usas PowerShell)
+## Paso 2: Habilitar ejecución de scripts en PowerShell
 
-### 2.1 Abrir PowerShell como Administrador
-
-1. Click derecho en el escritorio
-2. Selecciona **"Windows PowerShell (Admin)"** o **"Terminal (Admin)"**
-3. Haz click en **"Sí"** si pide confirmación
-
-### 2.2 Habilitar Scripts
-
-Ejecuta:
+Abre PowerShell **como Administrador** y ejecuta:
 
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
 
-Responde **`Y`** cuando pregunte.
-
-### 2.3 Verificar
-
-```powershell
-npm --version
-```
-
-Deberías ver la versión de npm.
+Responde `Y`.
 
 ---
 
-## Paso 3: Descargar el Proyecto
+## Paso 3: Obtener el proyecto
 
-### 3.1 Opción A: Descargar ZIP (Sin Git)
+### Opción A — Con Git
 
-**Si NO tienes Git instalado, usa esto:**
+```powershell
+git clone https://github.com/lazchirino-art/INT5.git
+cd INT5
+```
 
-1. Abre navegador: https://github.com/lazchirino-art/INT5
-2. Haz click en botón verde **"Code"**
-3. Haz click en **"Download ZIP"**
-4. Espera a que descargue
-5. Abre el archivo ZIP descargado
-6. Extrae en una carpeta (ej: `C:\Users\TuUsuario\Documentos\INT5`)
-
-### 3.2 Opción B: Descargar con Comando (Sin Git)
-
-Abre PowerShell o CMD y ejecuta:
+### Opción B — Sin Git (descarga ZIP)
 
 ```powershell
 Invoke-WebRequest -Uri "https://github.com/lazchirino-art/INT5/archive/refs/heads/main.zip" -OutFile "INT5.zip"
@@ -86,46 +49,53 @@ cd INT5-main
 
 ---
 
-## Paso 4: Instalar Dependencias
-
-### 4.1 Abrir Terminal en la Carpeta del Proyecto
-
-1. Abre PowerShell o CMD
-2. Navega a la carpeta:
-   ```powershell
-   cd C:\ruta\a\INT5-main
-   ```
-   (Reemplaza `C:\ruta\a\INT5-main` con tu ruta real)
-
-### 4.2 Instalar npm packages
-
-Ejecuta:
+## Paso 4: Instalar dependencias
 
 ```powershell
 npm install
 ```
 
-Espera a que termine (puede tomar 1-2 minutos).
-
-Deberías ver:
-
-```
-added XXX packages in XXs
-```
+Espera hasta ver: `added XXX packages in XXs`
 
 ---
 
-## Paso 5: Iniciar el Servidor
+## Paso 5: Configurar variable de entorno de cifrado
 
-### 5.1 Ejecutar el Servidor
+Crea el archivo `backend/.env` con el siguiente contenido:
 
-En la misma terminal, ejecuta:
+```
+ENCRYPTION_SECRET=una-clave-aleatoria-larga-y-segura
+```
+
+> ⚠️ Esta clave cifra las contraseñas guardadas en `config/app-config.json`.  
+> Si la cambias, tendrás que volver a ingresar las contraseñas en el wizard.  
+> **No subas este archivo al repositorio.**
+
+Si el archivo no existe, el servidor arranca de todos modos pero no cifrará las credenciales.
+
+---
+
+## Paso 6: Configurar acceso por nombre `int5` (opcional, recomendado)
+
+Para acceder con `http://int5:3000` en lugar de `http://localhost:3000`:
+
+Abre PowerShell **como Administrador** y ejecuta:
+
+```powershell
+Add-Content -Path "C:\Windows\System32\drivers\etc\hosts" -Value "`n127.0.0.1`tint5" -Encoding utf8
+```
+
+Para acceso desde el **teléfono** (misma red WiFi), el mDNS (`http://int5.local:3000`) se anuncia automáticamente al iniciar el servidor. No requiere configuración adicional.
+
+---
+
+## Paso 7: Iniciar el servidor
 
 ```powershell
 npm start
 ```
 
-Deberías ver algo como:
+Salida esperada:
 
 ```
 ==================================================
@@ -133,213 +103,129 @@ Backend Server
 ==================================================
 
 ✔ Server running on port 3000
-✔ URL: http://localhost:3000
+✔ Local:   http://localhost:3000
+✔ mDNS:    http://int5.local:3000  ← PC y teléfono (misma red)
+✔ Network: http://192.168.x.x:3000  [Wi-Fi]
 ✔ Endpoint: POST /test-connection
-
+✔ Config API: POST /api/config/save
+✔ Config API: GET /api/config/load
+✔ Product API: POST /api/product/import
+✔ Sync Log:    GET /api/sync-log
+...
 ==================================================
 ```
 
-### 5.2 El Servidor está Corriendo
-
-**NO cierres esta terminal.** El servidor necesita estar corriendo.
+> **No cierres esta terminal.** El servidor necesita estar corriendo.
 
 ---
 
-## Paso 6: Abrir en Navegador
+## Paso 8: Abrir la aplicación
 
-### 6.1 Abrir la Aplicación
+Abre tu navegador en: `http://localhost:3000`
 
-1. Abre tu navegador (Chrome, Edge, Firefox, etc.)
-2. Ve a: `http://localhost:3000`
-3. Deberías ver el menú principal con botones
+Verás el menú principal. Haz click en **CSV** (sección Integraciones).
 
 ---
 
-## Paso 7: Usar la Aplicación
+## Paso 9: Configurar el wizard (5 tabs en orden)
 
-### 7.1 Ir a CSV Integration
+### Tab 1 — Connector
 
-1. Haz click en botón **"CSV"** (en sección "Integraciones")
-2. Se abre formulario de configuración
-3. Selecciona **"Network Path"** en "Connection Type"
+| Campo | Descripción |
+|-------|-------------|
+| Connection Type | Selecciona **Network Path** |
+| Path | Ruta UNC: `\\servidor\compartida\carpeta` |
+| File Name Pattern | Ej: `medications_*.csv` |
+| Authentication | Marcar si la carpeta requiere usuario/contraseña |
+| Domain | Marcar si el usuario pertenece a un dominio Windows |
 
-### 7.2 Ingresar Datos
+1. Haz click en **Test Connection**
+2. Si aparece **STATUS: READY**, haz click en **Save Configuration**
 
-Rellena los campos:
+### Tab 2 — Parser
 
-| Campo | Ejemplo |
-|-------|---------|
-| **Path** | `\\servidor-local\compartida\medicinas` |
-| **File Name Pattern** | `medications_*.csv` |
-| **Authentication** | ✓ (marcar si necesita) |
-| **Username** | `tu_usuario` |
-| **Password** | `tu_contraseña` |
-| **Use Domain** | ✓ (marcar si necesita) |
-| **Domain** | `TU_DOMINIO` |
+1. Configura delimitador, encabezado y otros parámetros
+2. Agrega las columnas esperadas (nombre + índice)
+3. Usa **Check Configuration** para ver un preview del archivo real
+4. Haz click en **Save Configuration**
 
-### 7.3 Probar Conexión
+### Tab 3 — Mapping
 
-1. Haz click en **"Test Connection"**
-2. Espera a que termine (2-5 segundos)
-3. Verás logs en la pantalla
+1. La tabla se rellena con las columnas del parser
+2. Escribe el **JSON Tag** que verá el sistema externo (CORINA)
+3. Desmarca **Include** para omitir columnas del response
+4. Haz click en **Save Mapping**
 
-**Si ves "STATUS: READY":**
-- ✓ Conexión exitosa
-- ✓ Archivo detectado
-- ✓ Puedes hacer click en "Save Configuration"
+### Tab 4 — Validation
 
-**Si ves "STATUS: FAILED":**
-- ✗ Verificar ruta
-- ✗ Verificar credenciales
-- ✗ Verificar que el servidor SMB esté accesible
+1. La tabla se rellena con los campos incluidos en el mapping
+2. Marca **Required** en campos obligatorios
+3. Un campo requerido vacío rechaza el producto con mensaje al operador
+4. Haz click en **Save Validation Rules**
 
-### 7.4 Guardar Configuración
+### Tab 5 — Persistence
 
-Si el status es **READY**:
-
-1. Haz click en **"Save Configuration"**
-2. Verás: `SAVE: GUARDADO`
-3. Las credenciales se guardan encriptadas
-
-### 7.5 Próxima Vez
-
-Cuando vuelvas a abrir la página:
-- Los datos se cargan automáticamente
-- Solo haz click en "Test Connection"
+1. Elige el **Trigger Mode** (Auto o Manual)
+2. Haz click en **Save Persistence Config**
+3. El **Sync Log** se actualiza automáticamente con cada llamada a `/api/product/import`
 
 ---
 
-## Paso 8: Detener el Servidor
-
-### 8.1 Cuando Termines
-
-En la terminal donde corre el servidor:
-
-1. Presiona **`Ctrl + C`**
-2. Responde **`Y`** si pide confirmación
-3. El servidor se detiene
-
-### 8.2 Volver a Iniciar
+## Paso 10: Verificar con una llamada de prueba
 
 ```powershell
+Invoke-RestMethod -Uri "http://localhost:3000/api/product/import" `
+  -Method POST `
+  -ContentType "application/json" `
+  -Body '{"productCode":"ASP001","searchColumnIndex":0}'
+```
+
+O con curl:
+
+```bash
+curl -X POST http://localhost:3000/api/product/import \
+  -H "Content-Type: application/json" \
+  -d '{"productCode":"ASP001","searchColumnIndex":0}'
+```
+
+---
+
+## Detener el servidor
+
+En la terminal donde corre:
+
+```
+Ctrl + C
+```
+
+---
+
+## Resumen de comandos
+
+```powershell
+# Instalar (solo una vez)
+npm install
+
+# Iniciar
 npm start
+
+# Detener
+Ctrl + C
 ```
 
 ---
 
 ## Troubleshooting
 
-### Error: "npm is not recognized"
-
-**Solución:**
-1. Reinstala Node.js
-2. Reinicia PowerShell/CMD completamente
-3. Verifica: `npm --version`
-
-### Error: "Cannot find path"
-
-**Solución:**
-1. Verifica que la ruta SMB sea correcta
-2. Prueba en File Explorer: `\\servidor-local\compartida`
-3. Verifica que el servidor SMB esté encendido
-
-### Error: "Access is denied"
-
-**Solución:**
-1. Verifica usuario/contraseña
-2. Verifica permisos en la carpeta compartida
-3. Prueba credenciales en File Explorer
-
-### Error: "Port 3000 is already in use"
-
-**Solución:**
-1. Cierra otras aplicaciones que usen puerto 3000
-2. O usa otro puerto: `npm start -- --port 3001`
-
-### Error: "Cannot GET /"
-
-**Solución:**
-1. Verifica que el servidor está corriendo
-2. Verifica que abriste `http://localhost:3000` (no `http://localhost`)
-3. Recarga la página: `Ctrl + R`
-
-### Error: "Scripts are disabled"
-
-**Solución:**
-```powershell
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-```
+| Error | Solución |
+|-------|----------|
+| `npm is not recognized` | Reinstala Node.js y reinicia PowerShell |
+| `Port 3000 already in use` | `taskkill /F /IM node.exe` en CMD |
+| `Cannot find path` en Test Connection | Verifica la ruta en File Explorer |
+| Config no se carga al abrir la página | Vuelve a ingresar credenciales en Tab 1 y guarda |
+| `Cannot GET /` | Verifica que el servidor está corriendo |
+| Scripts deshabilitados | `Set-ExecutionPolicy RemoteSigned -Scope CurrentUser` |
 
 ---
 
-## Estructura del Proyecto
-
-```
-INT5-main/
-├── server.js                    ← Inicia aquí (npm start)
-├── package.json                 ← Dependencias
-├── backend/
-│   └── network-path-handler-windows.js  ← Lógica SMB
-├── src/
-│   ├── pages/
-│   │   ├── index.html          ← Menú principal
-│   │   └── csv-integration.html  ← Formulario
-│   ├── js/
-│   │   ├── network-path-client.js       ← Cliente HTTP
-│   │   ├── credential-crypto.js         ← Encriptación
-│   │   ├── config-loader.js             ← Cargar config
-│   │   └── csv-integration.js ← Lógica formulario
-│   └── styles/
-│   │   └── csv-integration.css
-├── docs/
-│   ├── FLUJO-COMPLETO.md
-│   └── API-ENDPOINT.md
-└── INICIO-RAPIDO.md
-```
-
----
-
-## Resumen de Comandos
-
-```powershell
-# 1. Descargar
-Invoke-WebRequest -Uri "https://github.com/lazchirino-art/INT5/archive/refs/heads/main.zip" -OutFile "INT5.zip"
-Expand-Archive -Path "INT5.zip" -DestinationPath "."
-cd INT5-main
-
-# 2. Instalar
-npm install
-
-# 3. Iniciar
-npm start
-
-# 4. Abrir navegador
-# http://localhost:3000
-```
-
----
-
-## Próximos Pasos
-
-1. Leer `INICIO-RAPIDO.md` para guía rápida
-2. Leer `docs/FLUJO-COMPLETO.md` para arquitectura
-3. Probar conexión a tu ruta SMB
-4. Guardar configuración
-5. Usar la aplicación
-
----
-
-## Soporte
-
-Si tienes problemas:
-
-1. Verifica que Node.js está instalado: `node --version`
-2. Verifica que npm está instalado: `npm --version`
-3. Verifica que el servidor está corriendo: `npm start`
-4. Verifica que abres `http://localhost:3000` (no otra URL)
-5. Revisa la consola del navegador: `F12 → Console`
-6. Revisa los logs del servidor en la terminal
-
----
-
-**¡Listo para empezar!**
+Ver `docs/API-ENDPOINT.md` para la referencia completa de endpoints.

@@ -1,404 +1,219 @@
-# SMB File Detector - Documentación Técnica
+# SMB File Detector — Documentación Técnica
 
 ## Descripción General
 
-El módulo **SMBFileDetector** es un componente genérico diseñado para acceder a rutas de red (SMB), listar archivos y detectar un CSV basado en un patrón configurable.
+El acceso SMB en INT5 se implementa en **`backend/network-path-handler-windows.js`** mediante la clase `NetworkPathHandlerWindows`. Usa **PowerShell** como capa de transporte para acceder a rutas de red, en lugar de la librería `smb2` directamente.
 
-**Características principales:**
-- ✅ Conexión a rutas de red compartidas (SMB/CIFS)
-- ✅ Soporte para autenticación con dominio opcional
-- ✅ Listado de archivos dinámico
-- ✅ Coincidencia de patrones (exacto y wildcard)
-- ✅ Validación paso a paso
-- ✅ Logs detallados para debugging
-- ✅ Manejo robusto de errores
+Este enfoque garantiza compatibilidad nativa con Windows sin problemas de dependencias binarias.
 
-## Instalación
+## Arquitectura
 
-### Incluir en HTML
-
-```html
-<script src="src/js/smb-file-detector.js"></script>
+```
+NetworkPathHandlerWindows
+        │
+        ├── detect()     → PowerShell Get-ChildItem → lista archivos → aplica patrón
+        └── readFile()   → PowerShell Get-Content   → devuelve string UTF-8
 ```
 
-### Usar en JavaScript
-
-```javascript
-const detector = new SMBFileDetector();
-```
-
-## API
+## Clase: `NetworkPathHandlerWindows`
 
 ### Constructor
 
-```javascript
-const detector = new SMBFileDetector();
+```js
+import NetworkPathHandlerWindows from './backend/network-path-handler-windows.js';
+import CredentialCrypto from './backend/credential-crypto.js';
+
+const credentialCrypto = new CredentialCrypto(process.env.ENCRYPTION_SECRET);
+const handler = new NetworkPathHandlerWindows(credentialCrypto);
 ```
 
-Crea una nueva instancia del detector.
+El parámetro `credentialCrypto` es opcional. Si se pasa, el handler puede descifrar contraseñas cifradas con AES-GCM antes de usarlas.
 
-### Método Principal: `detect(credentials)`
+---
 
-```javascript
-const result = await detector.detect(credentials);
-```
+### `detect(params)` — Detectar archivo
+
+Accede a la carpeta SMB, lista los archivos y selecciona el que coincide con el patrón.
 
 **Parámetros:**
 
-```javascript
-{
-  path: string,           // Ruta UNC (ej: \\servidor\compartida\datos)
-  username: string,       // Nombre de usuario
-  password: string,       // Contraseña
-  domain: string,         // Dominio (opcional)
-  pattern: string         // Patrón de archivo (ej: datos_*.csv)
-}
-```
+| Campo | Tipo | Requerido | Descripción |
+|-------|------|-----------|-------------|
+| `path` | string | Sí | Ruta UNC: `\\servidor\compartida\carpeta` |
+| `pattern` | string | Sí | Patrón de archivo: `medications_*.csv` |
+| `username` | string | No | Usuario SMB (null si no requiere auth) |
+| `password` | string | No | Contraseña (en claro o cifrada `enc:v1:...`) |
+| `domain` | string | No | Dominio Windows (null si no aplica) |
 
 **Retorna:**
 
-```javascript
+```js
 {
-  status: 'READY' | 'FAILED' | 'PROCESSING',
-  selectedFile: string | null,
-  error: string | null,
-  message: string | null,
-  files: array | null,
-  logs: array
+  status: 'READY' | 'FAILED',
+  file:   string | null,         // nombre del archivo seleccionado
+  logs:   string[]               // log de pasos (para mostrar en el wizard)
 }
 ```
 
-## Ejemplos de Uso
+**Ejemplo:**
 
-### Ejemplo 1: Uso Básico
-
-```javascript
-const detector = new SMBFileDetector();
-
-const credentials = {
-  path: '\\\\servidor\\compartida\\datos',
-  username: 'usuario',
-  password: 'contraseña',
-  pattern: 'datos_*.csv'
-};
-
-const result = await detector.detect(credentials);
+```js
+const result = await handler.detect({
+  path:     '\\\\192.168.0.10\\medicinas',
+  username: 'operador',
+  password: 'pass123',
+  domain:   null,
+  pattern:  'medications_*.csv'
+});
 
 if (result.status === 'READY') {
-  console.log('Archivo encontrado:', result.selectedFile);
-} else {
-  console.log('Error:', result.message);
+  console.log('Archivo:', result.file); // 'medications_20260602.csv'
 }
 ```
 
-### Ejemplo 2: Con Dominio
+---
 
-```javascript
-const credentials = {
-  path: '\\\\servidor.empresa.com\\compartida\\reportes',
-  username: 'juan.perez',
-  password: 'MiContraseña123',
-  domain: 'EMPRESA',
-  pattern: 'reporte_*.csv'
-};
+### `readFile(params)` — Leer contenido del archivo
 
-const result = await detector.detect(credentials);
+Lee el contenido completo del archivo como string UTF-8.
+
+**Parámetros:**
+
+| Campo | Tipo | Requerido | Descripción |
+|-------|------|-----------|-------------|
+| `path` | string | Sí | Ruta UNC de la carpeta |
+| `filename` | string | Sí | Nombre exacto del archivo (resultado de `detect`) |
+| `username` | string | No | Usuario SMB |
+| `password` | string | No | Contraseña (en claro) |
+| `domain` | string | No | Dominio Windows |
+
+**Retorna:** `string` con el contenido CSV, o `null` si falló.
+
+**Ejemplo:**
+
+```js
+const content = await handler.readFile({
+  path:     '\\\\192.168.0.10\\medicinas',
+  filename: 'medications_20260602.csv',
+  username: 'operador',
+  password: 'pass123',
+  domain:   null
+});
+
+// content = "MedCode,MedName,Dose\nASP001,Aspirina 100mg,100mg\n..."
 ```
 
-### Ejemplo 3: Patrón Exacto
+---
 
-```javascript
-const credentials = {
-  path: '\\\\192.168.1.100\\archivos',
-  username: 'admin',
-  password: 'admin123',
-  pattern: 'datos.csv'  // Sin wildcards
-};
+## Patrones soportados
 
-const result = await detector.detect(credentials);
+El módulo convierte el patrón a una expresión regular internamente.
+
+| Patrón | Coincide con |
+|--------|-------------|
+| `*.csv` | Cualquier archivo `.csv` |
+| `medications_*.csv` | `medications_20260602.csv`, `medications_20260603.csv` |
+| `report_2026*.csv` | `report_20260101.csv`, `report_20260601.csv` |
+| `data.csv` | Solo `data.csv` (coincidencia exacta) |
+
+Regla: si coinciden **0 archivos** → `FAILED`. Si coinciden **2 o más** → `FAILED` (usar patrón más específico).
+
+---
+
+## Flujo de validación
+
+```
+1. Validar que path y pattern están definidos
+2. Validar formato UNC (debe comenzar con \\)
+3. Ejecutar PowerShell: Get-ChildItem en la ruta con credenciales
+4. Filtrar archivos por patrón
+5. Si 0 coincidencias → FAILED "No files found"
+6. Si 2+ coincidencias → FAILED "Multiple files found"
+7. Si 1 coincidencia → READY, file = nombre del archivo
 ```
 
-### Ejemplo 4: Manejo de Errores
+---
 
-```javascript
-const result = await detector.detect(credentials);
+## Autenticación
 
-switch (result.status) {
-  case 'READY':
-    console.log('Archivo:', result.selectedFile);
-    break;
-  case 'FAILED':
-    if (result.error === 'FILE_NOT_FOUND') {
-      console.log('Archivo no encontrado');
-    } else if (result.error === 'MULTIPLE_FILES_FOUND') {
-      console.log('Múltiples archivos encontrados:', result.files);
-    } else {
-      console.log('Error:', result.message);
-    }
-    break;
-}
+### Sin dominio
+
+```js
+{ username: 'usuario', password: 'contraseña', domain: null }
+// PowerShell usa: -Credential usuario
 ```
 
-## Patrones Soportados
+### Con dominio
 
-### Wildcard (*)
-
-El asterisco (*) coincide con cualquier secuencia de caracteres.
-
-```javascript
-// Ejemplos
-'datos_*.csv'      // datos_2024.csv, datos_2025.csv, datos_final.csv
-'*_reporte.csv'    // enero_reporte.csv, febrero_reporte.csv
-'*.csv'            // cualquier archivo .csv
-'archivo_*_v*.csv' // archivo_datos_v1.csv, archivo_logs_v2.csv
+```js
+{ username: 'usuario', password: 'contraseña', domain: 'EMPRESA' }
+// PowerShell usa: -Credential EMPRESA\usuario
 ```
 
-### Patrón Exacto
+### Sin credenciales
 
-Sin wildcards, busca coincidencia exacta.
-
-```javascript
-// Ejemplos
-'datos.csv'        // Solo datos.csv
-'reporte_2024.csv' // Solo reporte_2024.csv
+```js
+{ username: null, password: null, domain: null }
+// PowerShell accede sin -Credential (sesión Windows actual)
 ```
 
-## Flujo de Validación
+---
 
-El módulo ejecuta validación paso a paso:
+## Contraseñas cifradas
 
-1. ✔ **Validar credenciales** - Verificar que todos los parámetros sean válidos
-2. ✔ **Resolver ruta** - Normalizar y validar la ruta UNC
-3. ✔ **Conectar a red** - Establecer conexión al recurso compartido
-4. ✔ **Autenticar** - Validar credenciales de usuario
-5. ✔ **Verificar acceso** - Confirmar acceso a la carpeta
-6. ✔ **Listar archivos** - Obtener lista de archivos
-7. ✔ **Aplicar patrón** - Filtrar archivos por patrón
-8. ✔ **Seleccionar archivo** - Validar y seleccionar archivo
+Si `credentialCrypto` se pasó al constructor, el handler detecta automáticamente si la contraseña está cifrada (formato `enc:v1:aes-gcm:...`) y la descifra antes de usarla.
 
-## Logs
+Si la descifra con error, usa el valor original. Esto permite degradación segura cuando el `ENCRYPTION_SECRET` cambia.
 
-Cada paso genera logs detallados para debugging.
+---
 
-### Acceder a Logs
+## Logs generados
 
-```javascript
-const result = await detector.detect(credentials);
+Los logs son arrays de strings planos retornados en `result.logs`. Se muestran en el panel de Connection Test del wizard.
 
-// Acceder a logs
-result.logs.forEach(log => {
-  console.log(`[${log.timestamp}] ${log.prefix}`);
+Ejemplos de mensajes:
+```
+✓ Folder accessible
+✓ Files found: 3
+✓ Matching files: 1
+✓ File selected: medications_20260602.csv
+✗ Access is denied
+✗ Cannot find network path
+⚠ No files found matching pattern
+```
+
+---
+
+## Limitaciones
+
+- Solo funciona en **Windows** (usa PowerShell)
+- Solo acceso a **una carpeta** — no recursivo
+- Solo un archivo por operación (un detect → un readFile)
+- Sin reintentos automáticos
+- Sin caché de conexiones (cada llamada abre y cierra la sesión PowerShell)
+
+---
+
+## Uso en server.js
+
+El handler se instancia dentro de `loadProductionContext()` para todos los endpoints de producto, y en el endpoint `POST /test-connection` para el wizard.
+
+```js
+import NetworkPathHandlerWindows from './backend/network-path-handler-windows.js';
+import CredentialCrypto from './backend/credential-crypto.js';
+
+// En loadProductionContext():
+const credentialCrypto = process.env.ENCRYPTION_SECRET
+  ? new CredentialCrypto(process.env.ENCRYPTION_SECRET)
+  : null;
+
+const handler = new NetworkPathHandlerWindows(credentialCrypto);
+
+const fileContent = await handler.readFile({
+  path:     connectorConfig.path,
+  filename: connectorConfig.filename,
+  username: connectorConfig.username || null,
+  password: password,   // ya descifrado
+  domain:   connectorConfig.domain || null
 });
 ```
-
-### Exportar Logs
-
-```javascript
-const logsString = detector.exportLogs();
-console.log(logsString);
-```
-
-### Estructura de Log
-
-```javascript
-{
-  timestamp: '2024-04-29T13:45:30.123Z',
-  message: 'Resolviendo ruta: \\\\servidor\\compartida',
-  type: 'info',  // 'info', 'success', 'error', 'warning'
-  prefix: 'ℹ Resolviendo ruta: \\\\servidor\\compartida'
-}
-```
-
-## Códigos de Error
-
-| Código | Descripción |
-|--------|------------|
-| `FILE_NOT_FOUND` | No se encontró ningún archivo coincidente |
-| `MULTIPLE_FILES_FOUND` | Se encontraron múltiples archivos coincidentes |
-| `INVALID_PATH` | La ruta no es válida |
-| `CONNECTION_FAILED` | Falló la conexión a la red |
-| `AUTHENTICATION_FAILED` | Falló la autenticación |
-| `ACCESS_DENIED` | Acceso denegado a la carpeta |
-| `FOLDER_NOT_FOUND` | La carpeta no existe |
-| `UNEXPECTED_ERROR` | Error inesperado |
-
-## Métodos Adicionales
-
-### `getStateSummary()`
-
-Obtiene un resumen del estado actual.
-
-```javascript
-const summary = detector.getStateSummary();
-console.log(summary);
-// {
-//   state: { pathResolved, connected, authenticated, ... },
-//   result: { status, selectedFile, ... },
-//   logs: [...]
-// }
-```
-
-### `exportLogs()`
-
-Exporta los logs como string formateado.
-
-```javascript
-const logsString = detector.exportLogs();
-console.log(logsString);
-```
-
-### `patternToRegex(pattern)`
-
-Convierte un patrón wildcard a expresión regular.
-
-```javascript
-const regex = detector.patternToRegex('datos_*.csv');
-const matches = ['datos_2024.csv', 'datos_2025.csv'].filter(f => regex.test(f));
-```
-
-## Integración con UI
-
-### HTML
-
-```html
-<form id="smbForm">
-  <input type="text" id="networkPath" placeholder="\\servidor\compartida" />
-  <input type="text" id="username" placeholder="Usuario" />
-  <input type="password" id="password" placeholder="Contraseña" />
-  <input type="text" id="domain" placeholder="Dominio (opcional)" />
-  <input type="text" id="filePattern" placeholder="Patrón (ej: datos_*.csv)" />
-  <button type="button" onclick="handleDetect()">Detectar</button>
-</form>
-
-<div id="result"></div>
-<div id="logs"></div>
-```
-
-### JavaScript
-
-```javascript
-async function handleDetect() {
-  const credentials = {
-    path: document.getElementById('networkPath').value,
-    username: document.getElementById('username').value,
-    password: document.getElementById('password').value,
-    domain: document.getElementById('domain').value,
-    pattern: document.getElementById('filePattern').value
-  };
-
-  const detector = new SMBFileDetector();
-  const result = await detector.detect(credentials);
-
-  // Mostrar resultado
-  const resultDiv = document.getElementById('result');
-  if (result.status === 'READY') {
-    resultDiv.innerHTML = `
-      <div class="success">
-        <h3>✔ Éxito</h3>
-        <p>Archivo: <strong>${result.selectedFile}</strong></p>
-      </div>
-    `;
-  } else {
-    resultDiv.innerHTML = `
-      <div class="error">
-        <h3>❌ Error</h3>
-        <p>${result.message}</p>
-      </div>
-    `;
-  }
-
-  // Mostrar logs
-  const logsDiv = document.getElementById('logs');
-  logsDiv.innerHTML = result.logs
-    .map(log => `<div class="log log-${log.type}">${log.prefix}</div>`)
-    .join('');
-}
-```
-
-## Consideraciones de Implementación
-
-### En Navegador
-
-Este módulo está diseñado como una abstracción. En un navegador real:
-
-1. **No puedes acceder directamente a SMB** desde JavaScript por razones de seguridad
-2. **Necesitas un backend** que maneje la conexión SMB
-3. **El backend debe exponer un endpoint** que:
-   - Reciba credenciales
-   - Conecte a la red
-   - Liste archivos
-   - Retorne el resultado
-
-### En Node.js
-
-Para usar en Node.js, necesitas:
-
-```bash
-npm install smb2
-```
-
-Luego adaptar el módulo para usar la librería real:
-
-```javascript
-const SMB2 = require('smb2');
-
-async connectToNetwork(params) {
-  const smb2Client = new SMB2({
-    host: params.server,
-    username: params.username,
-    password: params.password,
-    domain: params.domain
-  });
-
-  // Conectar y listar archivos...
-}
-```
-
-### En Aplicación Embebida
-
-Para una aplicación embebida (como en tu caso):
-
-1. **Usa un backend local** (Node.js, Python, etc.)
-2. **Expone un endpoint REST** que maneje SMB
-3. **Llama desde el frontend** al endpoint
-
-```javascript
-async detect(credentials) {
-  const response = await fetch('/api/smb/detect', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(credentials)
-  });
-
-  return await response.json();
-}
-```
-
-## Mejores Prácticas
-
-1. **Nunca hardcodees credenciales** - Siempre obtén del usuario
-2. **Valida entrada** - El módulo lo hace, pero valida también en UI
-3. **Maneja errores** - Usa los códigos de error para mensajes específicos
-4. **Revisa logs** - Útiles para debugging
-5. **Usa HTTPS** - Si transmites credenciales por red
-6. **Limpia contraseñas** - Después de usar, limpia de memoria si es posible
-
-## Limitaciones Actuales
-
-- ✗ No accede realmente a SMB en navegador (necesita backend)
-- ✗ No soporta caracteres especiales en patrones (excepto *)
-- ✗ No soporta búsqueda recursiva en subcarpetas
-- ✗ No filtra por tipo de archivo (solo por nombre)
-
-## Próximas Mejoras
-
-- [ ] Soporte para búsqueda recursiva
-- [ ] Filtrado por tipo de archivo
-- [ ] Soporte para caracteres especiales en patrones
-- [ ] Caché de conexiones
-- [ ] Reintentos automáticos
-- [ ] Timeout configurable
-
-## Contacto y Soporte
-
-Para preguntas o problemas, consulta la documentación o revisa los ejemplos en `smb-file-detector.example.js`.

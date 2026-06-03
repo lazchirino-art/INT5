@@ -1,123 +1,106 @@
-# POC - Aplicación Embebida con Interfaz Frontend
+# INT5 — CSV Integration Module
 
-Proyecto de Proof of Concept para una aplicación embebida que corre localmente sin servidor externo. Esta es una interfaz frontend completa para gestionar menús y configuraciones de máquinas.
+Módulo embebido Node.js + Express para máquinas de empaque de medicamentos. Cuando el software de empaque (CORINA) no encuentra un producto en su base de datos interna, consulta a INT5, que lo busca en un archivo CSV ubicado en una ruta de red SMB.
+
+## Arquitectura
+
+```
+CORINA (software empaque)
+        │
+        │ HTTP POST /api/product/import
+        ▼
+  INT5 (Node.js + Express, puerto 3000)
+        │
+        ├── Lee app-config.json  (conexión, parser, mapping, validación, persistencia)
+        ├── PowerShell → SMB → CSV en red local
+        ├── Parsea y busca el producto
+        ├── Aplica mapping de columnas → JSON tags
+        ├── Valida campos requeridos
+        └── Guarda log en data/sync-log.json
+```
 
 ## Estructura del Proyecto
 
 ```
-poc-embedded-app/
+INT5/
+├── server.js                          ← Servidor principal (npm start)
+├── package.json
+├── backend/
+│   ├── network-path-handler-windows.js  ← Acceso SMB vía PowerShell
+│   ├── credential-crypto.js             ← Cifrado AES-GCM (lado servidor)
+│   ├── csv-utils.js                     ← Utilidades de parseo CSV
+│   └── local-db.js                      ← Storage JSON (sync-log + cache productos)
+├── config/
+│   ├── app-config.json                  ← Configuración persistida (auto-generado)
+│   └── .env                             ← ENCRYPTION_SECRET
+├── data/
+│   ├── sync-log.json                    ← Log de importaciones (auto-generado)
+│   └── products.json                    ← Caché de productos (auto-generado)
 ├── src/
-│   ├── pages/              # Páginas HTML principales
-│   │   ├── index.html      # Página principal del menú
-│   │   ├── csv-integration.html
-│   │   └── Menu_decodificado.html
-│   ├── components/         # Componentes reutilizables (futuro)
-│   ├── styles/             # Estilos CSS
-│   │   └── csv-integration.css
-│   ├── js/                 # Scripts JavaScript
-│   │   ├── app-local-secret.js
-│   │   ├── credential-crypto.js
-│   │   └── csv-integration.js
-│   └── assets/             # Imágenes, iconos, recursos
-├── config/                 # Configuración de la aplicación
-│   ├── config-persistence.mjs
-│   └── server.mjs
-├── docs/                   # Documentación del proyecto
-└── README.md              # Este archivo
+│   ├── pages/
+│   │   ├── index.html                   ← Menú principal
+│   │   └── csv-integration.html         ← Wizard de configuración (5 tabs)
+│   ├── js/
+│   │   ├── csv-integration.js           ← Lógica principal del wizard
+│   │   ├── credential-crypto.js         ← Cifrado AES-GCM (lado cliente)
+│   │   ├── config-loader.js             ← Carga configuración al abrir la página
+│   │   ├── network-path-client.js       ← Cliente HTTP para el backend
+│   │   ├── csv-parser.js                ← Parseo CSV en frontend
+│   │   ├── parser-ui.js                 ← UI del tab Parser
+│   │   ├── mapping-ui.js                ← UI del tab Mapping
+│   │   ├── validation-ui.js             ← UI del tab Validation
+│   │   └── persistence-ui.js            ← UI del tab Persistence + Sync Log
+│   └── styles/
+│       ├── csv-integration.css
+│       └── main.css
+└── docs/
+    ├── API-ENDPOINT.md                  ← Referencia completa de la API
+    ├── BACKEND-SMB.md                   ← Documentación técnica del backend SMB
+    └── SMB-FILE-DETECTOR.md             ← Módulo de detección de archivos
 ```
 
-## Características
+## Wizard de Configuración (5 tabs)
 
-- **Interfaz de Menú Profesional**: Sistema de menú modular con secciones (Máquina, Registros, Configuraciones, Integraciones)
-- **Autenticación Local**: Gestión de credenciales y secretos de aplicación
-- **Persistencia de Datos**: Configuración que persiste localmente
-- **Cifrado de Credenciales**: Módulo de criptografía para proteger datos sensibles
-- **Diseño Responsivo**: Interfaz adaptable a diferentes tamaños de pantalla
+| Tab | Nombre | Descripción |
+|-----|--------|-------------|
+| 1 | **Connector** | Ruta SMB, patrón de archivo, credenciales |
+| 2 | **Parser** | Delimitador, columnas esperadas, preview |
+| 3 | **Mapping** | Renombrar columnas CSV → JSON tags de salida |
+| 4 | **Validation** | Marcar campos como Required u Optional |
+| 5 | **Persistence** | Modo Auto/Manual + Sync Log de importaciones |
 
-## Requisitos
+## Acceso Local
 
-- Navegador web moderno (Chrome, Firefox, Safari, Edge)
-- Node.js (opcional, para ejecutar servidor local)
-- No requiere conexión a internet ni servidor externo
+| URL | Desde |
+|-----|-------|
+| `http://localhost:3000` | PC (localhost) |
+| `http://int5:3000` | PC (hosts file) |
+| `http://int5.local:3000` | Teléfono en la misma red (mDNS) |
+| `http://192.168.x.x:3000` | Cualquier dispositivo en la red |
 
-## Instalación y Uso
+## Iniciar
 
-### Opción 1: Abrir directamente en el navegador
-
-1. Navega a la carpeta `src/pages/`
-2. Abre `index.html` con tu navegador web
-
-### Opción 2: Ejecutar con servidor local (Node.js)
-
-```bash
-cd poc-embedded-app
-node config/server.mjs
+```powershell
+npm start
 ```
 
-El servidor correrá en `http://localhost:8000`
+## Dependencias
 
-## Archivos Principales
+| Paquete | Uso |
+|---------|-----|
+| `express` | Servidor HTTP |
+| `cors` | Cabeceras CORS |
+| `dotenv` | Variables de entorno |
+| `smb2` | Conexión SMB (no usado directamente — PowerShell es el canal real) |
+| `bonjour-service` | mDNS para `int5.local` |
 
-### `src/pages/index.html`
-Página principal con la estructura del menú. Contiene cuatro secciones principales:
-- **Máquina**: Inicio, Alarmas, Info
-- **Registros**: Productos, Recetas, Diseños, Etiqueta, Clasificación, Impresoras, Registros
-- **Configuraciones**: Usuarios, Corte, Embalaje, General, Formatos, Base de datos
-- **Integraciones**: CSV, API-RESP, Database
+## Seguridad
 
-### `src/styles/csv-integration.css`
-Estilos CSS para la interfaz CSV. Incluye:
-- Tema de colores (azul eléctrico y negro)
-- Animaciones y transiciones
-- Estilos responsivos para móvil y escritorio
-- Efectos hover y estados activos
-
-### `src/js/`
-Scripts JavaScript para funcionalidad:
-- `credential-crypto.js`: Cifrado y descifrado de credenciales
-- `app-local-secret.js`: Gestión de secretos de aplicación
-- `csv-integration.js`: Lógica del menú CSV
-
-### `config/`
-Archivos de configuración:
-- `config-persistence.mjs`: Persistencia de configuración en almacenamiento local
-- `server.mjs`: Servidor HTTP simple para desarrollo local
-
-## Desarrollo
-
-### Agregar nuevas páginas
-
-1. Crea un archivo HTML en `src/pages/`
-2. Importa los estilos desde `src/styles/`
-3. Vincula los scripts necesarios desde `src/js/`
-
-### Agregar nuevos estilos
-
-1. Crea archivos CSS en `src/styles/`
-2. Importa en el HTML correspondiente
-
-### Agregar nueva funcionalidad
-
-1. Crea scripts en `src/js/`
-2. Asegúrate de que sean módulos ES6 si es necesario
-3. Vincula en las páginas HTML
-
-## Notas de Implementación
-
-- La aplicación está diseñada para correr completamente en el navegador
-- No hay dependencias externas de servidor
-- Los datos se pueden persistir usando `localStorage` o `sessionStorage`
-- Los módulos de criptografía protegen datos sensibles localmente
-
-## Próximos Pasos
-
-- [ ] Implementar módulos de componentes reutilizables
-- [ ] Agregar gestión de estado global
-- [ ] Crear sistema de rutas para navegación
-- [ ] Implementar almacenamiento local persistente
-- [ ] Agregar pruebas unitarias
-- [ ] Documentar API de componentes
+- Las contraseñas se cifran con **AES-GCM** antes de guardarse en `app-config.json`
+- La clave de cifrado está en `backend/.env` (`ENCRYPTION_SECRET`) — nunca se sube al repositorio
+- En el frontend, el cifrado usa `window.CSV_INT_LOCAL_SECRET` (definido en `csv-integration.html`)
+- Los logs nunca incluyen contraseñas en claro
 
 ## Licencia
 
-Proyecto interno - Todos los derechos reservados
+Proyecto interno — Todos los derechos reservados

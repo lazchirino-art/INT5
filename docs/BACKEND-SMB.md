@@ -1,380 +1,194 @@
-# Backend SMB - Documentación Técnica
+# Backend SMB — Documentación Técnica
 
 ## Descripción General
 
-El backend SMB es un servidor Node.js que proporciona acceso a rutas de red compartidas (SMB/CIFS) usando la librería `smb2`.
+INT5 accede a archivos CSV en rutas de red compartidas (SMB/CIFS) usando **PowerShell** como intermediario, no la librería `smb2` directamente. Esto permite compatibilidad total con Windows sin dependencias nativas problemáticas.
 
-**Arquitectura:**
-- Frontend (HTML/JS) → HTTP → Backend Node.js → SMB2 → Red Compartida
+**Flujo de acceso:**
 
-## Instalación
-
-### 1. Instalar Dependencias
-
-```bash
-npm install
+```
+server.js
+    │
+    └── NetworkPathHandlerWindows
+              │
+              └── PowerShell (New-PSDrive / Get-ChildItem / Get-Content)
+                        │
+                        └── SMB Share (\\servidor\compartida\carpeta)
 ```
 
-Esto instala:
-- `express` - Framework web
-- `smb2` - Cliente SMB2 para Node.js
-- `cors` - Manejo de CORS
-- `dotenv` - Variables de entorno
+## Archivo principal
 
-### 2. Iniciar el Servidor
+**`backend/network-path-handler-windows.js`**
 
-```bash
-npm start
+Clase `NetworkPathHandlerWindows` con dos métodos públicos:
+
+### `detect(params)` — Detectar archivo
+
+Busca el archivo que coincide con el patrón en la ruta SMB.
+
+```js
+const handler = new NetworkPathHandlerWindows(credentialCrypto);
+
+const result = await handler.detect({
+  path:     '\\\\servidor\\compartida\\carpeta',
+  username: 'usuario',    // null si no requiere auth
+  password: 'contraseña', // null si no requiere auth
+  domain:   'DOMINIO',    // null si no aplica
+  pattern:  'medications_*.csv'
+});
+
+// result:
+// {
+//   status: 'READY' | 'FAILED',
+//   file:   'medications_20260602.csv' | null,
+//   logs:   ['✓ Folder accessible', '✓ File selected: ...']
+// }
 ```
 
-O en modo desarrollo:
+### `readFile(params)` — Leer contenido del archivo
 
-```bash
-npm run dev
+Lee el contenido completo del archivo como string UTF-8.
+
+```js
+const content = await handler.readFile({
+  path:     '\\\\servidor\\compartida\\carpeta',
+  filename: 'medications_20260602.csv',
+  username: 'usuario',
+  password: 'contraseña',
+  domain:   'DOMINIO'
+});
+
+// content: string con el CSV completo
 ```
 
-El servidor correrá en `http://localhost:3000`
+## Cifrado de credenciales
 
-## Endpoints API
+Las contraseñas se guardan cifradas en `config/app-config.json` usando AES-GCM.
 
-### 1. Health Check
+**Servidor:** `backend/credential-crypto.js` — clase `CredentialCrypto`  
+**Cliente:** `src/js/credential-crypto.js` — módulo IIFE expuesto en `window.CredentialCrypto`
 
-**GET** `/api/health`
+La clave de cifrado del servidor se lee de `backend/.env`:
+```
+ENCRYPTION_SECRET=clave-aleatoria-segura
+```
 
-Verifica que el servidor está disponible.
+Formato del valor cifrado:
+```
+enc:v1:aes-gcm:<iv_base64>:<ciphertext_base64>
+```
 
-**Respuesta:**
+Al ejecutar el endpoint de Test Connection, la contraseña recibida puede ser:
+- En claro (si el usuario la acaba de escribir)
+- Cifrada (si viene del autoload de configuración)
+
+El handler intenta descifrarla y si falla, usa el valor tal como llega.
+
+## Estructura de app-config.json
+
 ```json
 {
-  "status": "OK",
-  "timestamp": "2024-04-29T13:45:30.123Z",
-  "service": "POC Embedded App Backend"
-}
-```
-
-### 2. Detectar Archivo CSV
-
-**POST** `/api/smb/detect`
-
-Detecta un archivo CSV basado en un patrón.
-
-**Body:**
-```json
-{
-  "path": "\\\\servidor\\compartida\\datos",
-  "username": "usuario",
-  "password": "contraseña",
-  "domain": "DOMINIO",
-  "pattern": "datos_*.csv"
-}
-```
-
-**Respuesta (Éxito):**
-```json
-{
-  "status": "READY",
-  "selectedFile": "datos_2024.csv",
-  "logs": [
-    {
-      "timestamp": "2024-04-29T13:45:30.123Z",
-      "message": "Iniciando detección de archivos...",
-      "type": "info",
-      "prefix": "ℹ Iniciando detección de archivos..."
-    },
-    ...
-  ]
-}
-```
-
-**Respuesta (Error - No encontrado):**
-```json
-{
-  "status": "FAILED",
-  "error": "FILE_NOT_FOUND",
-  "message": "No se encontró ningún archivo que coincida con el patrón",
-  "logs": [...]
-}
-```
-
-**Respuesta (Error - Múltiples):**
-```json
-{
-  "status": "FAILED",
-  "error": "MULTIPLE_FILES_FOUND",
-  "message": "Se encontraron 3 archivos coincidentes",
-  "files": ["datos_2024.csv", "datos_2025.csv", "datos_backup.csv"],
-  "logs": [...]
-}
-```
-
-### 3. Listar Archivos
-
-**POST** `/api/smb/list`
-
-Lista todos los archivos en una carpeta SMB.
-
-**Body:**
-```json
-{
-  "path": "\\\\servidor\\compartida\\datos",
-  "username": "usuario",
-  "password": "contraseña",
-  "domain": "DOMINIO"
-}
-```
-
-**Respuesta:**
-```json
-{
-  "status": "READY",
-  "files": [
-    {
-      "name": "datos_2024.csv",
-      "isDirectory": false,
-      "size": 1024,
-      "modified": "2024-04-29T10:00:00Z"
-    },
-    {
-      "name": "carpeta_datos",
-      "isDirectory": true,
-      "size": 0,
-      "modified": "2024-04-29T10:00:00Z"
-    }
+  "connection": {
+    "connectorType":     "networkPath",
+    "path":              "\\\\servidor\\compartida",
+    "filename":          "medications_20260602.csv",
+    "fileNamePattern":   "*.csv",
+    "useAuthentication": true,
+    "username":          "cliente",
+    "password":          "enc:v1:aes-gcm:...",
+    "useDomain":         false,
+    "domain":            ""
+  },
+  "parser": {
+    "delimiter":  ",",
+    "hasHeader":  true,
+    "quoteChar":  "\"",
+    "escapeChar": "\"",
+    "columns": [
+      { "name": "MedCode", "index": 0, "type": "String" },
+      { "name": "MedName", "index": 1, "type": "String" }
+    ]
+  },
+  "mapping": [
+    { "csvColumn": "MedCode", "index": 0, "jsonTag": "code", "include": true },
+    { "csvColumn": "MedName", "index": 1, "jsonTag": "name", "include": true }
   ],
-  "logs": [...]
+  "validation": [
+    { "csvColumn": "MedCode", "jsonTag": "code", "required": true },
+    { "csvColumn": "MedName", "jsonTag": "name", "required": false }
+  ],
+  "persistence": {
+    "triggerMode": "auto"
+  }
 }
 ```
 
-### 4. Verificar Conexión
+## loadProductionContext()
 
-**POST** `/api/smb/verify`
+Función helper compartida por todos los endpoints de producto. Centraliza:
 
-Verifica que se puede conectar a la ruta SMB.
+1. Verificar que `app-config.json` existe y es legible
+2. Verificar que `connection.path` y `connection.filename` están definidos
+3. Verificar que `parser.columns` tiene al menos una columna
+4. Descifrar la contraseña SMB
+5. Leer el archivo CSV desde la red
+6. Parsear el CSV con `csvUtils.parseCSVContent()`
 
-**Body:**
-```json
-{
-  "path": "\\\\servidor\\compartida\\datos",
-  "username": "usuario",
-  "password": "contraseña",
-  "domain": "DOMINIO"
-}
-```
+Devuelve: `{ config, connectorConfig, parserConfig, mappingConfig, rows }`
 
-**Respuesta:**
-```json
-{
-  "status": "READY",
-  "connected": true,
-  "logs": [...]
-}
-```
+Lanza un `Error` con `.statusCode` en cualquier fallo (400 para config inválida, 500 para errores de servidor).
 
-## Códigos de Error
+## Storage local
 
-| Código | Descripción |
-|--------|------------|
-| `FILE_NOT_FOUND` | No se encontró archivo coincidente |
-| `MULTIPLE_FILES_FOUND` | Se encontraron múltiples archivos |
-| `INVALID_PATH` | La ruta UNC no es válida |
-| `CONNECTION_FAILED` | Falló la conexión a SMB |
-| `AUTHENTICATION_FAILED` | Falló la autenticación |
-| `ACCESS_DENIED` | Acceso denegado a la carpeta |
-| `FOLDER_NOT_FOUND` | La carpeta no existe |
-| `UNEXPECTED_ERROR` | Error inesperado |
-| `MISSING_PARAMETERS` | Faltan parámetros en la solicitud |
-| `SERVER_ERROR` | Error interno del servidor |
+**`backend/local-db.js`** — módulo ES puro, sin dependencias externas.
 
-## Estructura del Código
+| Función | Descripción |
+|---------|-------------|
+| `insertSyncLog(entry)` | Agrega una entrada al log de importaciones |
+| `getSyncLog({page, limit})` | Lee el log paginado, más recientes primero |
+| `upsertProduct({productCode, data})` | Guarda/actualiza un producto en caché |
+| `getProduct(productCode)` | Lee un producto del caché |
 
-### `server.js`
-Servidor Express principal. Define los endpoints y maneja las solicitudes HTTP.
+Archivos:
+- `data/sync-log.json` — array append-only, nunca se borra
+- `data/products.json` — objeto `{productCode: {...datos}}` 
 
-### `backend/smb-file-detector-backend.js`
-Clase `SMB2FileDetector` que maneja:
-- Validación de credenciales
-- Conexión a SMB usando `smb2`
-- Listado de archivos
-- Coincidencia de patrones
-- Logs detallados
+El directorio `data/` se crea automáticamente en la primera escritura.
 
-## Patrones Soportados
+## Patrones de archivo soportados
 
-### Wildcard (*)
-```javascript
-'datos_*.csv'      // datos_2024.csv, datos_2025.csv
-'*_reporte.csv'    // enero_reporte.csv, febrero_reporte.csv
-'*.csv'            // cualquier .csv
-```
+| Patrón | Coincide con |
+|--------|-------------|
+| `*.csv` | Cualquier `.csv` |
+| `medications_*.csv` | `medications_20260602.csv` |
+| `report.csv` | Solo `report.csv` (exacto) |
 
-### Exacto
-```javascript
-'datos.csv'        // Solo datos.csv
-'reporte_2024.csv' // Solo reporte_2024.csv
-```
+## Limitaciones
 
-## Autenticación
-
-### Sin Dominio
-```json
-{
-  "username": "usuario",
-  "password": "contraseña"
-}
-```
-
-Usa: `usuario`
-
-### Con Dominio
-```json
-{
-  "username": "usuario",
-  "password": "contraseña",
-  "domain": "EMPRESA"
-}
-```
-
-Usa: `EMPRESA\usuario`
-
-## Logs
-
-Cada solicitud genera logs detallados con:
-- Timestamp ISO 8601
-- Tipo (info, success, error, warning)
-- Mensaje descriptivo
-
-**Ejemplo:**
-```
-✔ Resolviendo ruta: \\servidor\compartida\datos
-✔ Conectando a: \\servidor\compartida
-✔ Autenticando como: EMPRESA\usuario
-✔ Conexión exitosa
-✔ Autenticación exitosa
-✔ Accediendo a carpeta
-✔ Carpeta accesible
-✔ Archivos encontrados: 5
-✔ Aplicando patrón: datos_*.csv
-✔ Archivos coincidentes: 1
-✔ Archivo seleccionado: datos_2024.csv
-✔ Detección completada exitosamente
-```
-
-## Limitaciones Actuales
-
-- ✗ No soporta búsqueda recursiva en subcarpetas
-- ✗ No filtra por tipo de archivo (solo por nombre)
-- ✗ No soporta caracteres especiales en patrones (excepto *)
-- ✗ Timeout fijo para conexiones
-
-## Mejoras Futuras
-
-- [ ] Soporte para búsqueda recursiva
-- [ ] Caché de conexiones
-- [ ] Reintentos automáticos
-- [ ] Timeout configurable
-- [ ] Soporte para caracteres especiales en patrones
-- [ ] Filtrado por tipo de archivo
-- [ ] Compresión de respuestas
+- Solo soporta **Network Path (SMB)**. SFTP está en el wizard como opción pero no implementado en el backend.
+- No soporta búsqueda recursiva en subcarpetas.
+- Solo un archivo por patrón — si coinciden varios, el resultado es `FAILED`.
+- Acceso síncrono al archivo JSON (no apto para carga muy alta concurrente).
 
 ## Troubleshooting
 
-### Error: "Cannot find module 'smb2'"
+### `Cannot find path` / `Access is denied`
 
-**Solución:**
-```bash
-npm install
-```
-
-### Error: "ECONNREFUSED"
-
-**Causa:** No se puede conectar a la ruta SMB
-
-**Soluciones:**
-- Verifica que la ruta es correcta
-- Verifica que el servidor está disponible en la red
-- Verifica credenciales
-- Verifica firewall
-
-### Error: "Authentication failed"
-
-**Causa:** Credenciales incorrectas
-
-**Soluciones:**
+- Verifica la ruta en File Explorer: `\\servidor\compartida`
 - Verifica usuario y contraseña
-- Verifica que el dominio es correcto (si aplica)
-- Intenta sin dominio si es un servidor local
+- Si hay dominio, verifica que sea correcto
 
-### Error: "Access denied"
+### `Password decryption failed`
 
-**Causa:** El usuario no tiene permisos
+- El `ENCRYPTION_SECRET` en `backend/.env` cambió respecto al que se usó al guardar
+- Solución: vuelve a ingresar la contraseña en Tab 1 del wizard y guarda
 
-**Soluciones:**
-- Verifica permisos de carpeta
-- Usa un usuario con permisos suficientes
-- Verifica que la carpeta compartida está accesible
+### `ENCRYPTION_SECRET` no definido
 
-## Desarrollo
+- Crea `backend/.env` con `ENCRYPTION_SECRET=tu-clave`
+- Sin esta variable el servidor arranca pero no cifra contraseñas
 
-### Modo Debug
+### El servidor encuentra el archivo en Test Connection pero falla al importar
 
-Agrega logs adicionales editando `backend/smb-file-detector-backend.js`:
-
-```javascript
-// Habilitar logs detallados
-console.log('DEBUG:', data);
-```
-
-### Testing Manual
-
-```bash
-# Verificar servidor
-curl http://localhost:3000/api/health
-
-# Detectar archivo
-curl -X POST http://localhost:3000/api/smb/detect \
-  -H "Content-Type: application/json" \
-  -d '{
-    "path": "\\\\servidor\\compartida",
-    "username": "usuario",
-    "password": "contraseña",
-    "pattern": "*.csv"
-  }'
-```
-
-## Seguridad
-
-### Consideraciones
-
-1. **Credenciales en tránsito:** Usa HTTPS en producción
-2. **Credenciales en logs:** Los logs pueden contener información sensible
-3. **Validación:** Valida todas las entradas
-4. **CORS:** Configura CORS apropiadamente en producción
-
-### Recomendaciones
-
-```javascript
-// En producción, usar variables de entorno
-const username = process.env.SMB_USERNAME;
-const password = process.env.SMB_PASSWORD;
-
-// Usar HTTPS
-const https = require('https');
-const fs = require('fs');
-
-const options = {
-  key: fs.readFileSync('key.pem'),
-  cert: fs.readFileSync('cert.pem')
-};
-
-https.createServer(options, app).listen(3000);
-```
-
-## Contacto y Soporte
-
-Para preguntas o problemas, revisa los logs del servidor o consulta la documentación de `smb2`.
-
-## Referencias
-
-- [smb2 - NPM](https://www.npmjs.com/package/smb2)
-- [Express.js](https://expressjs.com/)
-- [SMB Protocol](https://en.wikipedia.org/wiki/Server_Message_Block)
+- Verifica que el campo `filename` esté en `app-config.json`
+- Si no está, haz Test Connection + Save en Tab 1 de nuevo

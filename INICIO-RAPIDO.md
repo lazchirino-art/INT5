@@ -1,189 +1,130 @@
-# Inicio Rápido - POC SMB Network Path
+# Inicio Rápido — INT5
 
-## 1. Preparación
+## Requisitos
 
-### Requisitos
 - Windows 10/11
-- Node.js 18+ instalado
-- Acceso a ruta SMB en tu red local
+- Node.js 18+
+- Acceso a la ruta SMB en la red local
 
-### Clonar/Actualizar Proyecto
+## Iniciar el servidor
 
-```bash
+```powershell
 cd INT5
-git pull origin main
-npm install
-```
-
-## 2. Iniciar Servidor
-
-```bash
+npm install   # solo la primera vez
 npm start
 ```
 
-Verás:
+Salida esperada:
+
 ```
 ==================================================
 Backend Server
 ==================================================
 
 ✔ Server running on port 3000
-✔ URL: http://localhost:3000
-✔ Endpoint: POST /test-connection
-
+✔ Local:   http://localhost:3000
+✔ mDNS:    http://int5.local:3000  ← PC y teléfono (misma red)
+✔ Network: http://192.168.x.x:3000  [Wi-Fi]
+...
 ==================================================
 ```
 
-## 3. Abrir en Navegador
+## Abrir la aplicación
 
+Abre el navegador en: `http://localhost:3000`  
+O desde el teléfono (misma red): `http://int5.local:3000`
+
+---
+
+## Configuración del wizard (5 tabs)
+
+### Tab 1 — Connector
+
+1. Selecciona **Network Path**
+2. Ingresa la ruta SMB: `\\servidor\compartida\carpeta`
+3. Ingresa el patrón de archivo: `medications_*.csv`
+4. Si la carpeta requiere credenciales, marca **Authentication**
+5. Haz click en **Test Connection**
+6. Si el resultado es **STATUS: READY**, haz click en **Save Configuration**
+
+### Tab 2 — Parser
+
+1. Configura el delimitador (`,` por defecto)
+2. Indica si el archivo tiene encabezado
+3. Agrega las columnas esperadas con su nombre e índice
+4. Haz click en **Check Configuration** para ver un preview del CSV
+5. Haz click en **Save Configuration**
+
+### Tab 3 — Mapping
+
+1. La tabla se llena automáticamente con las columnas del parser
+2. Edita el **JSON Tag** de cada columna (nombre que usará la API de salida)
+3. Desmarca **Include** para excluir columnas del response
+4. Haz click en **Save Mapping**
+
+### Tab 4 — Validation
+
+1. La tabla se llena desde el mapping guardado
+2. Marca **Required** en los campos obligatorios
+3. Si un campo requerido está vacío en el CSV, el producto se rechaza con el mensaje:  
+   `"Product found in CSV but with incomplete data — field [X] is empty"`
+4. Haz click en **Save Validation Rules**
+
+### Tab 5 — Persistence
+
+1. Elige el **Trigger Mode**:
+   - **Auto** — busca, valida e importa silenciosamente en cada llamada
+   - **Manual** — devuelve `CONFIRMATION_REQUIRED` primero; importa al reenviar con `confirmed: true`
+2. Haz click en **Save Persistence Config**
+3. El **Sync Log** muestra cada llamada a `/api/product/import` con timestamp, resultado y errores
+
+---
+
+## Llamada desde CORINA (endpoint principal)
+
+```http
+POST http://int5:3000/api/product/import
+Content-Type: application/json
+
+{
+  "productCode": "ASP001",
+  "searchColumnIndex": 0
+}
 ```
-http://localhost:3000
-```
 
-Deberías ver el menú principal con botones de navegación.
+Respuestas posibles:
 
-## 4. Ir a CSV Integration
+| `status` | Descripción |
+|----------|-------------|
+| `IMPORTED` | Producto encontrado, validado e importado |
+| `NOT_FOUND` | No existe en el CSV |
+| `VALIDATION_FAILED` | Campo requerido vacío — incluye `message` con detalle |
+| `CONFIRMATION_REQUIRED` | Modo manual — reenviar con `"confirmed": true` |
+| `ERROR` | Error de configuración o conexión |
 
-1. Click en botón **"CSV"** (en sección "Integraciones")
-2. Se abre formulario de configuración
-3. Selecciona **"Network Path"** en "Connection Type"
-
-## 5. Ingresar Datos de Conexión
-
-### Ejemplo Real
-
-```
-Path: \\servidor-local\compartida\medicinas
-File Name Pattern: medications_*.csv
-Authentication: ✓ (marcar si necesita)
-  Username: tu_usuario
-  Password: tu_contraseña
-Use Domain: ✓ (marcar si necesita)
-  Domain: TU_DOMINIO
-```
-
-### Ejemplos de Patrones
-
-| Patrón | Coincide con |
-|--------|-------------|
-| `*.csv` | Cualquier CSV |
-| `medications_*.csv` | `medications_20260502.csv` |
-| `medications_202605*.csv` | `medications_20260501.csv`, `medications_20260502.csv` |
-| `report.csv` | Solo `report.csv` |
-
-## 6. Probar Conexión
-
-Click en **"Test Connection"**
-
-### Resultado Esperado
-
-**✓ STATUS: READY**
-```
-✓ Iniciando conexión...
-✓ Ruta: \\servidor-local\compartida\medicinas
-✓ Patrón: medications_*.csv
-✓ Enviando solicitud al backend...
-✓ Resolving path...
-✓ Connecting to network share...
-✓ Accessing folder via PowerShell...
-✓ Folder accessible
-✓ Files found: 3
-✓ Matching files: 1
-✓ File selected: medications_20260502.csv
-
-STATUS: READY
-```
-
-El botón "Save Configuration" se activa.
-
-### Errores Comunes
-
-**✗ Cannot find path**
-- Verificar que la ruta sea correcta
-- Verificar que el servidor SMB esté encendido
-- Probar: `net use \\servidor-local\compartida`
-
-**✗ Access is denied**
-- Verificar usuario/contraseña
-- Verificar permisos en la carpeta
-- Probar credenciales en File Explorer
-
-**✗ Multiple files found**
-- Ajustar patrón para ser más específico
-- Ej: `medications_202605*.csv` en lugar de `medications_*.csv`
-
-## 7. Guardar Configuración
-
-Si el resultado es **READY**:
-
-Click en **"Save Configuration"**
-
-Verás: `SAVE: GUARDADO`
-
-Las credenciales se encriptan y guardan en el navegador.
-
-## 8. Próxima Vez
-
-Cuando vuelvas a abrir la página:
-- Los datos se cargan automáticamente
-- Puedes hacer click directo en "Test Connection"
-- No necesitas ingresar datos nuevamente
-
-## Estructura del Proyecto
-
-```
-INT5/
-├── server.js                    ← Inicia aquí (npm start)
-├── backend/
-│   └── network-path-handler-windows.js  ← Lógica SMB
-├── src/
-│   ├── pages/
-│   │   ├── index.html          ← Menú principal
-│   │   └── csv-integration.html  ← Formulario
-│   ├── js/
-│   │   ├── network-path-client.js       ← Cliente HTTP
-│   │   ├── credential-crypto.js         ← Encriptación
-│   │   ├── config-loader.js             ← Cargar config
-│   │   └── csv-integration.js ← Lógica formulario
-│   └── styles/
-│       └── csv-integration.css
-└── docs/
-    ├── FLUJO-COMPLETO.md       ← Documentación detallada
-    └── API-ENDPOINT.md         ← Especificación del endpoint
-```
+---
 
 ## Troubleshooting
 
-### "Cannot GET /"
-- Verificar que el servidor está corriendo: `npm start`
-- Verificar puerto 3000: `netstat -ano | findstr :3000`
+| Error | Causa | Solución |
+|-------|-------|----------|
+| `Cannot GET /` | Servidor no está corriendo | `npm start` |
+| `STATUS: FAILED` en Test Connection | Ruta o credenciales incorrectas | Verifica en File Explorer primero |
+| Config no carga al abrir la página | `ENCRYPTION_SECRET` cambió | Vuelve a ingresar la contraseña en Tab 1 y guarda |
+| `Parser not configured` en endpoint | Tab 2 no guardado | Completa y guarda el Parser |
+| Puerto 3000 ocupado | Otra instancia corriendo | `taskkill /F /IM node.exe` en CMD |
 
-### CSS/JS no carga
-- Limpiar caché del navegador: `Ctrl+Shift+Delete`
-- Reiniciar servidor: `npm start`
+---
 
-### Conexión rechazada
-- Verificar que Node.js está instalado: `node -v`
-- Verificar que npm install completó: `npm list`
+## Estructura de archivos relevantes
 
-### Credenciales no se guardan
-- Verificar que localStorage está habilitado en el navegador
-- Verificar que el status es READY (no FAILED)
-- Verificar consola del navegador: `F12 → Console`
+```
+INT5/
+├── server.js               ← Punto de entrada
+├── backend/.env            ← ENCRYPTION_SECRET (no subir al repo)
+├── config/app-config.json  ← Configuración guardada (auto-generado)
+├── data/sync-log.json      ← Log de importaciones (auto-generado)
+└── data/products.json      ← Caché de productos (auto-generado)
+```
 
-## Próximos Pasos
-
-1. **Leer CSV**: Después de detectar archivo, leerlo y parsearlo
-2. **Validar datos**: Validar estructura y tipos
-3. **Transformar**: Mapear columnas a esquema
-4. **Guardar**: Persistir en base de datos
-5. **Automatizar**: Ejecutar periódicamente
-
-Ver `docs/FLUJO-COMPLETO.md` para detalles técnicos.
-
-## Soporte
-
-- Revisar logs en consola del navegador: `F12`
-- Revisar logs del servidor en terminal
-- Consultar `docs/API-ENDPOINT.md` para especificación del endpoint
-- Consultar `docs/FLUJO-COMPLETO.md` para arquitectura completa
+Ver `docs/API-ENDPOINT.md` para la referencia completa de la API.
