@@ -11,14 +11,17 @@
 
 :root {
   /* Colores */
-  --color-primary: #1f5bff;
+  --color-primary: #2d69ff;
   --color-primary-dark: #2445bd;
-  --color-primary-light: #2d69ff;
-  --color-background: #000000;
-  --color-text: #ffffff;
-  --color-text-secondary: #cccccc;
-  --color-border: #333333;
-  --color-shadow: rgba(18, 69, 255, 0.26);
+  --color-primary-light: #4c83ff;
+
+  --color-background: #f5f7fb;
+  --color-text: #1a1f2e;
+  --color-text-secondary: #6b7280;
+
+  --color-border: #e5e7eb;
+  --color-shadow: rgba(0, 0, 0, 0.12);
+
   --color-success: #10b981;
   --color-warning: #f59e0b;
   --color-error: #ef4444;
@@ -26,9 +29,11 @@
   /* Tipografía */
   --font-family-base: 'Segoe UI', Arial, Helvetica, sans-serif;
   --font-family-mono: 'Courier New', monospace;
+
   --font-size-base: 16px;
   --font-size-small: 14px;
   --font-size-large: 18px;
+
   --font-weight-normal: 400;
   --font-weight-medium: 500;
   --font-weight-bold: 700;
@@ -49,10 +54,10 @@
   --border-radius-full: 36px;
 
   /* Sombras */
-  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.1);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.15);
-  --shadow-lg: 0 12px 30px var(--color-shadow);
-  --shadow-xl: 0 14px 34px rgba(18, 69, 255, 0.34);
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 12px 30px rgba(0, 0, 0, 0.12);
+  --shadow-xl: 0 20px 45px rgba(0, 0, 0, 0.16);
 
   /* Transiciones */
   --transition-fast: 160ms ease;

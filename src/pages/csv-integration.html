@@ -223,7 +223,7 @@
                 </div>
 
                 <!-- 4. Validation Log -->
-                <div class="parser-log" id="parserLog">
+                <div class="connection-log active" id="parserLog">
                     <h3>Validation Log</h3>
                     <div id="parserLogLines" class="log-lines">
                         <p>Not tested</p>
@@ -235,73 +235,120 @@
     </div>
 
     <div class="tab-content">
-        <h2>Mapping / Transformation</h2>
+        <h2>Field Mapping</h2>
+        <p class="mapping-description">
+            Assign a JSON tag name to each CSV column. The API response will use
+            these tag names. Uncheck <strong>Include</strong> to exclude a field
+            from the response entirely.
+        </p>
+
+        <div class="mapping-actions">
+            <button type="button" id="saveMappingBtn" class="save-config-button">Save Mapping</button>
+            <span id="mappingStatus" class="mapping-status mapping-status--idle">MAPPING: NOT SAVED</span>
+        </div>
 
         <table class="table" id="mappingTable">
             <thead>
                 <tr>
-                    <th>Client Field</th>
-                    <th>Index</th>
-                    <th>System Field</th>
-                    <th>Transformation</th>
-                    <th></th>
+                    <th>CSV Column</th>
+                    <th>JSON Tag (Output)</th>
+                    <th>Include</th>
                 </tr>
             </thead>
             <tbody id="mappingBody">
-                <!-- Populated from Parser configuration -->
+                <tr>
+                    <td colspan="3" class="mapping-placeholder">
+                        Save the Parser configuration to populate this table.
+                    </td>
+                </tr>
             </tbody>
         </table>
-
-        <button onclick="addMapping()">Add Mapping</button>
     </div>
 
+    <!-- TAB 4: VALIDATION -->
     <div class="tab-content">
         <h2>Validation Rules</h2>
+        <p class="validation-description">
+            Mark fields as <strong>Required</strong> to reject products with empty values.
+            Unchecked (Optional) fields are imported as <code>""</code> when missing.
+            When a required field is empty, the operator receives the message:
+            <em>"Product found in CSV but with incomplete data — field [X] is empty"</em>.
+        </p>
 
-        <div class="form-group">
-            <label>Required Fields</label>
-            <input type="text" placeholder="name, expiration_date">
+        <div class="validation-actions">
+            <button type="button" id="saveValidationBtn" class="save-config-button">Save Validation Rules</button>
+            <span id="validationStatus" class="validation-status validation-status--idle">VALIDATION: NOT SAVED</span>
         </div>
 
-        <div class="form-group">
-            <label>Date Format</label>
-            <input type="text" placeholder="YYYY-MM-DD">
-        </div>
-
-        <div class="form-group">
-            <label>On Error</label>
-            <select>
-                <option>Skip Record</option>
-                <option>Stop Process</option>
-                <option>Log Only</option>
-            </select>
-        </div>
+        <table class="table" id="validationTable">
+            <thead>
+                <tr>
+                    <th>CSV Column</th>
+                    <th>JSON Tag (Output)</th>
+                    <th>Required</th>
+                </tr>
+            </thead>
+            <tbody id="validationBody">
+                <tr>
+                    <td colspan="3" class="validation-placeholder">
+                        Save the Mapping configuration to populate this table.
+                    </td>
+                </tr>
+            </tbody>
+        </table>
     </div>
 
+    <!-- TAB 5: PERSISTENCE -->
     <div class="tab-content">
-        <h2>Persistence</h2>
+        <h2>Persistence &amp; Sync</h2>
 
-        <div class="form-group">
-            <label>Target Table</label>
-            <input type="text" placeholder="medications">
+        <div class="persistence-settings">
+            <div class="form-group">
+                <label>Trigger Mode</label>
+                <select id="triggerMode">
+                    <option value="auto">Auto — Silently search, validate and import on every call</option>
+                    <option value="manual">Manual — Ask operator for confirmation before importing</option>
+                </select>
+            </div>
+            <div class="persistence-actions">
+                <button type="button" id="savePersistenceBtn" class="save-config-button">Save Persistence Config</button>
+                <span id="persistenceStatus" class="persistence-status persistence-status--idle">PERSISTENCE: NOT SAVED</span>
+            </div>
         </div>
 
-        <div class="form-group">
-            <label>Mode</label>
-            <select>
-                <option>Insert Only</option>
-                <option>Upsert</option>
-                <option>Replace</option>
-            </select>
+        <div class="sync-log-section">
+            <div class="sync-log-header">
+                <h3>Sync Log</h3>
+                <button type="button" class="sync-log-refresh-btn" onclick="PersistenceUI.loadLog(PersistenceUI._currentPage)">↻ Refresh</button>
+            </div>
+            <table class="table" id="syncLogTable">
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Product Code</th>
+                        <th>Result</th>
+                        <th>Fields Imported</th>
+                        <th>Error</th>
+                    </tr>
+                </thead>
+                <tbody id="syncLogBody">
+                    <tr>
+                        <td colspan="5" class="sync-log-empty">No log entries yet.</td>
+                    </tr>
+                </tbody>
+            </table>
+            <div id="syncLogPagination"></div>
         </div>
     </div>
+
 </div>
 <script>
   Object.defineProperty(window, 'CSV_INT_LOCAL_SECRET', {
-    value: "my_super_secret_key_123",
-    writable: false,
-    configurable: false
-  });
+  value: '40e0122509f06d8ff649ff0366fa0e98702dac8f587110a0f1b4051aec0d0fd2',
+  writable: false,
+  configurable: false
+});
+
 </script>
 <script src="../js/app-local-secret.js"></script>
 <script src="../js/credential-crypto.js"></script>
@@ -309,6 +356,9 @@
 <script src="../js/config-loader.js"></script>
 <script src="../js/csv-parser.js"></script>
 <script src="../js/parser-ui.js"></script>
+<script src="../js/mapping-ui.js"></script>
+<script src="../js/validation-ui.js"></script>
+<script src="../js/persistence-ui.js"></script>
 <script src="../js/csv-integration.js"></script>
 </body>
 </html>

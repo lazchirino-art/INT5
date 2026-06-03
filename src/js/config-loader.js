@@ -32,8 +32,15 @@ class ConfigLoader {
         return false;
       }
 
-      // Decrypt credentials
-      const runtimeConfig = await CredentialCrypto.prepareConnectionConfigForRuntime(config);
+      // Decrypt credentials — if decryption fails (e.g. key mismatch), still load
+      // the non-sensitive fields and leave the password empty so the user can re-enter it.
+      let runtimeConfig;
+      try {
+        runtimeConfig = await CredentialCrypto.prepareConnectionConfigForRuntime(config);
+      } catch (decryptErr) {
+        console.warn('[ConfigLoader] Could not decrypt password, loading without it:', decryptErr.message);
+        runtimeConfig = { ...config, password: '', privateKey: '', passphrase: '' };
+      }
 
       // Populate form fields
       console.log('[ConfigLoader] Populating Network Path form...');

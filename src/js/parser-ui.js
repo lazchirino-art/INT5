@@ -472,8 +472,12 @@ class ParserUI {
       if (result.success) {
         console.log('[ParserUI] Parser configuration saved successfully');
         alert('Parser configuration saved successfully');
-        await this.populateMappingTableFromParser(config.parser.columns);
-        
+
+        // Auto-populate Mapping tab from the newly saved parser columns
+        if (window.MappingUI) {
+          await MappingUI.loadFromParser();
+        }
+
         // Also save to localStorage for offline access (optional)
         localStorage.setItem('menuCsvInt.parserConfig', JSON.stringify(config));
       } else {

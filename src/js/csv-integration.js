@@ -37,6 +37,21 @@ function openTab(index) {
 
     tabs[index].classList.add('active');
     contents[index].classList.add('active');
+
+    // Tab 2 = Mapping (0-based index)
+    if (index === 2 && window.MappingUI) {
+        MappingUI.loadFromParser();
+    }
+
+    // Tab 3 = Validation
+    if (index === 3 && window.ValidationUI) {
+        ValidationUI.loadFromMapping();
+    }
+
+    // Tab 4 = Persistence
+    if (index === 4 && window.PersistenceUI) {
+        PersistenceUI.load();
+    }
 }
 
 function handleConnectionTypeChange() {
@@ -556,17 +571,6 @@ function addColumn() {
     tbody.appendChild(newRow);
 }
 
-function addMapping() {
-    const tbody = document.getElementById('mappingBody');
-    const newRow = document.createElement('tr');
-    newRow.innerHTML = `
-        <td><input type="text" placeholder="client_field"></td>
-        <td><input type="text" placeholder="system_field"></td>
-        <td><input type="text" placeholder="transformation()"></td>
-        <td><span class="delete-btn" onclick="removeRow(this)">x</span></td>
-    `;
-    tbody.appendChild(newRow);
-}
 
 function removeRow(element) {
     element.closest('tr').remove();
@@ -640,7 +644,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Initialize Parser UI
     ParserUI.init();
     console.log('[App] Parser UI initialized');
-    
+
+    // Initialize Mapping UI
+    MappingUI.init();
+    console.log('[App] Mapping UI initialized');
+
+    // Initialize Validation UI
+    ValidationUI.init();
+    console.log('[App] Validation UI initialized');
+
+    // Initialize Persistence UI
+    PersistenceUI.init();
+    console.log('[App] Persistence UI initialized');
+
     // Load saved configuration (both Connector and Parser)
     console.log('[App] Loading saved configuration...');
     const configLoaded = await ConfigLoader.loadAndRenderNetworkConfig();

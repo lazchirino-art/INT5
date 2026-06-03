@@ -6,39 +6,41 @@
   <title>Menú</title>
   <script>
   Object.defineProperty(window, 'CSV_INT_LOCAL_SECRET', {
-    value: "my_super_secret_key_123",
-    writable: false,
-    configurable: false
-  });
+  value: '40e0122509f06d8ff649ff0366fa0e98702dac8f587110a0f1b4051aec0d0fd2',
+  writable: false,
+  configurable: false
+});
+
 </script>
   <style>
     :root {
-      --bg: #000000;
-      --text: #ffffff;
-      --button-top: #1f5bff;
-      --button-bottom: #2445bd;
-      --button-hover-top: #2d69ff;
-      --button-hover-bottom: #2850d3;
-      --shadow: rgba(18, 69, 255, 0.26);
-    }
+  --bg: #f5f7fb;
+  --text: #1a1f2e;
 
-    * {
-      box-sizing: border-box;
-    }
+  --button-top: #2d69ff;
+  --button-bottom: #2445bd;
 
-    body {
-      margin: 0;
-      min-height: 100vh;
-      font-family: "Segoe UI", Arial, Helvetica, sans-serif;
-      color: var(--text);
-      background:
-        radial-gradient(circle at 3% 8%, rgba(105, 114, 130, 0.18) 0 22px, transparent 92px),
-        radial-gradient(circle at 95% 9%, rgba(183, 137, 105, 0.18) 0 34px, transparent 105px),
-        radial-gradient(circle at 70% 25%, rgba(65, 75, 78, 0.11) 0 28px, transparent 90px),
-        radial-gradient(circle at 4% 52%, rgba(60, 68, 71, 0.12) 0 42px, transparent 105px),
-        #000;
-      overflow-x: hidden;
-    }
+  --button-hover-top: #3a74ff;
+  --button-hover-bottom: #2a55d4;
+
+  --shadow: rgba(0, 0, 0, 0.12);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+  color: var(--text);
+
+  background:
+    radial-gradient(circle at 3% 8%, rgba(105, 114, 130, 0.10) 0 22px, transparent 92px),
+    radial-gradient(circle at 95% 9%, rgba(183, 137, 105, 0.10) 0 34px, transparent 105px),
+    radial-gradient(circle at 70% 25%, rgba(65, 75, 78, 0.06) 0 28px, transparent 90px),
+    radial-gradient(circle at 4% 52%, rgba(60, 68, 71, 0.07) 0 42px, transparent 105px),
+    var(--bg);
+
+  overflow-x: hidden;
+}
 
     .page {
       width: min(100%, 1920px);

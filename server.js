@@ -12,9 +12,26 @@ import cors from 'cors';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from 'fs';
+import { networkInterfaces } from 'os';
+import { Bonjour } from 'bonjour-service';
 import NetworkPathHandlerWindows from './backend/network-path-handler-windows.js';
 import CredentialCrypto from './backend/credential-crypto.js';
 import * as csvUtils from './backend/csv-utils.js';
+import { insertSyncLog, getSyncLog, upsertProduct } from './backend/local-db.js';
+
+/** Returns all non-loopback IPv4 addresses with their interface names. */
+function getLocalIPs() {
+  const nets = networkInterfaces();
+  const results = [];
+  for (const [name, iface] of Object.entries(nets)) {
+    for (const net of iface) {
+      if (net.family === 'IPv4' && !net.internal) {
+        results.push({ name, address: net.address });
+      }
+    }
+  }
+  return results;
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -64,6 +81,122 @@ app.use('/src/pages', express.static(join(__dirname, 'src', 'pages')));
 app.use(express.static(join(__dirname, 'src')));
 
 /**
+ * Apply field mapping to a single product object.
+ * Renames CSV column keys → JSON tag names. Drops fields with include=false.
+ * Falls back to the original object if no mapping is configured.
+ */
+function applyMapping(product, mappingConfig) {
+  if (!product || !Array.isArray(mappingConfig) || mappingConfig.length === 0) {
+    return product;
+  }
+  const mapped = {};
+  mappingConfig.forEach(({ csvColumn, jsonTag, include }) => {
+    if (include === false) return;
+    if (!Object.prototype.hasOwnProperty.call(product, csvColumn)) return;
+    mapped[jsonTag] = product[csvColumn];
+  });
+  return mapped;
+}
+
+/**
+ * Apply mapping to every product in a list result.
+ * Handles arrays of { product, rowIndex } items (used by all, filter, search-multiple).
+ */
+function applyMappingToList(items, mappingConfig) {
+  if (!Array.isArray(items)) return items;
+  return items.map(item => ({
+    ...item,
+    product: applyMapping(item.product, mappingConfig)
+  }));
+}
+
+/**
+ * Load production context shared by all product endpoints:
+ *   - Reads and validates app-config.json
+ *   - Decrypts SMB credentials
+ *   - Reads the CSV file from the network share
+ *   - Parses the CSV rows
+ *
+ * Returns { config, connectorConfig, parserConfig, mappingConfig, rows }
+ * Throws an Error with a .statusCode property on any failure.
+ */
+async function loadProductionContext() {
+  if (!existsSync(CONFIG_FILE)) {
+    const err = new Error('No saved configuration. Complete the integration setup first.');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  let config;
+  try {
+    config = JSON.parse(readFileSync(CONFIG_FILE, 'utf-8'));
+  } catch (e) {
+    const err = new Error('Configuration file is corrupted or unreadable.');
+    err.statusCode = 500;
+    throw err;
+  }
+
+  const connectorConfig = config.connection || {};
+  const parserConfig    = config.parser     || {};
+  const mappingConfig   = Array.isArray(config.mapping) ? config.mapping : [];
+
+  if (!connectorConfig.path) {
+    const err = new Error('Connector not configured: missing SMB path.');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (!connectorConfig.filename) {
+    const err = new Error('Connector not configured: no file detected. Run Test Connection first.');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (!Array.isArray(parserConfig.columns) || parserConfig.columns.length === 0) {
+    const err = new Error('Parser not configured: no columns defined. Complete the Parser tab first.');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  let credentialCrypto = null;
+  if (process.env.ENCRYPTION_SECRET) {
+    credentialCrypto = new CredentialCrypto(process.env.ENCRYPTION_SECRET);
+  }
+
+  let password = connectorConfig.password || null;
+  if (credentialCrypto && password) {
+    try {
+      password = await credentialCrypto.decrypt(password);
+    } catch (e) {
+      console.warn('[loadProductionContext] Password decryption failed, using raw value');
+    }
+  }
+
+  const handler = new NetworkPathHandlerWindows(credentialCrypto);
+  const fileContent = await handler.readFile({
+    path:     connectorConfig.path,
+    filename: connectorConfig.filename,
+    username: connectorConfig.username || null,
+    password: password,
+    domain:   connectorConfig.domain   || null
+  });
+
+  if (!fileContent) {
+    const err = new Error('Failed to read file from SMB share. Check connector configuration.');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const rows = csvUtils.parseCSVContent(
+    fileContent,
+    parserConfig.delimiter  || ',',
+    parserConfig.hasHeader  !== false,
+    parserConfig.quoteChar  || '"',
+    parserConfig.escapeChar || '"'
+  );
+
+  return { config, connectorConfig, parserConfig, mappingConfig, rows };
+}
+
+/**
  * POST /api/config/save
  * Save application configuration to backend
  */
@@ -86,17 +219,23 @@ app.post('/api/config/save', (req, res) => {
       }
     }
 
-    // Merge configurations
-    // If newConfig has 'connection', it's from Connector tab
-    // If newConfig has 'parser', it's from Parser tab
+    // Merge configurations — each tab saves only its own section.
+    // Guard: if a section is double-nested (e.g. connection.connection) unwrap it.
+    const unwrap = (val, key) =>
+      val && typeof val === 'object' && val[key] ? val[key] : val;
+
     const mergedConfig = {
-      connection: newConfig.connection || existingConfig.connection || {},
-      parser: newConfig.parser || existingConfig.parser || {}
+      connection:  unwrap(newConfig.connection, 'connection') || unwrap(existingConfig.connection, 'connection') || {},
+      parser:      newConfig.parser      || existingConfig.parser      || {},
+      mapping:     newConfig.mapping     || existingConfig.mapping     || [],
+      validation:  newConfig.validation  || existingConfig.validation  || [],
+      persistence: newConfig.persistence || existingConfig.persistence || {}
     };
 
     console.log('[CONFIG] Saving configuration...');
     console.log('[CONFIG] Connection:', mergedConfig.connection);
-    console.log('[CONFIG] Parser:', mergedConfig.parser);
+    console.log('[CONFIG] Parser:',     mergedConfig.parser);
+    console.log('[CONFIG] Mapping:',    mergedConfig.mapping);
 
     // Guardar configuración en archivo
     writeFileSync(CONFIG_FILE, JSON.stringify(mergedConfig, null, 2));
@@ -376,92 +515,27 @@ app.post('/api/connector/read-file', async (req, res) => {
  */
 app.post('/api/product/search', async (req, res) => {
   try {
-    const { productId, searchColumnIndex, returnAllColumns } = req.body;
+    const { productId, searchColumnIndex } = req.body;
 
-    // Validate input
     if (!productId || searchColumnIndex === undefined) {
-      return res.status(400).json({
-        error: 'Missing required fields: productId, searchColumnIndex',
-        found: false
-      });
+      return res.status(400).json({ error: 'Missing required fields: productId, searchColumnIndex', found: false });
     }
 
-    // Load saved configuration
-    if (!existsSync(CONFIG_FILE)) {
-      return res.status(400).json({
-        error: 'No saved configuration found. Please configure connector first.',
-        found: false
-      });
-    }
-
-    const configData = readFileSync(CONFIG_FILE, 'utf-8');
-    const config = JSON.parse(configData);
-    const connectorConfig = config.connection;
-    const parserConfig = config.parser;
+    const { parserConfig, mappingConfig, rows } = await loadProductionContext();
 
     console.log(`[PRODUCT SEARCH] Searching for: ${productId}`);
+    const result = csvUtils.searchProductInRows(rows, productId, searchColumnIndex, parserConfig.columns);
 
-    // Initialize CredentialCrypto
-    let credentialCrypto = null;
-    if (process.env.ENCRYPTION_SECRET) {
-      credentialCrypto = new CredentialCrypto(process.env.ENCRYPTION_SECRET);
+    if (result.found && result.product) {
+      result.product = applyMapping(result.product, mappingConfig);
     }
-
-    const handler = new NetworkPathHandlerWindows(credentialCrypto);
-
-    // Decrypt password
-    let password = connectorConfig.password;
-    if (credentialCrypto && password) {
-      try {
-        password = await credentialCrypto.decrypt(password);
-      } catch (error) {
-        console.error('[PRODUCT SEARCH] Decryption error:', error.message);
-        password = connectorConfig.password;
-      }
-    }
-
-    // Read file
-    const fileContent = await handler.readFile({
-      path: connectorConfig.path,
-      filename: connectorConfig.filename,
-      username: connectorConfig.username || null,
-      password: password || null,
-      domain: connectorConfig.domain || null
-    });
-
-    if (!fileContent) {
-      return res.status(400).json({
-        error: 'Failed to read file',
-        found: false
-      });
-    }
-
-    // Parse CSV
-    const rows = csvUtils.parseCSVContent(
-      fileContent,
-      parserConfig.delimiter,
-      parserConfig.hasHeader,
-      parserConfig.quoteChar,
-      parserConfig.escapeChar
-    );
-
-    // Search for product
-    const result = csvUtils.searchProductInRows(
-      rows,
-      productId,
-      searchColumnIndex,
-      parserConfig.columns  // Pass configured columns (with indices and data types)
-    );
 
     console.log(`[PRODUCT SEARCH] Result: ${result.found ? 'FOUND' : 'NOT FOUND'}`);
     res.json(result);
 
   } catch (error) {
     console.error('[PRODUCT SEARCH ERROR]', error.message);
-    res.status(500).json({
-      error: error.message,
-      found: false
-    });
+    res.status(error.statusCode || 500).json({ error: error.message, found: false });
   }
 });
 
@@ -483,88 +557,33 @@ app.post('/api/product/search-advanced', async (req, res) => {
   try {
     const { searchCriteria } = req.body;
 
-    if (!searchCriteria || !searchCriteria.columnName || !searchCriteria.value) {
-      return res.status(400).json({
-        error: 'Missing required fields: searchCriteria with columnName and value',
-        found: false
-      });
+    if (!searchCriteria || !searchCriteria.columnName || searchCriteria.value === undefined) {
+      return res.status(400).json({ error: 'Missing required fields: searchCriteria with columnName and value', found: false });
     }
 
-    // Load configuration
-    if (!existsSync(CONFIG_FILE)) {
-      return res.status(400).json({
-        error: 'No saved configuration found',
-        found: false
-      });
+    const { parserConfig, mappingConfig, rows } = await loadProductionContext();
+
+    const col = parserConfig.columns.find(c => c.name === searchCriteria.columnName);
+    if (!col) {
+      return res.status(400).json({ error: `Column "${searchCriteria.columnName}" not found in parser configuration`, found: false });
     }
 
-    const configData = readFileSync(CONFIG_FILE, 'utf-8');
-    const config = JSON.parse(configData);
-    const connectorConfig = config.connection;
-    const parserConfig = config.parser;
+    const operator = searchCriteria.exact === false ? 'contains' : 'equals';
+    const criteria = { columnIndex: col.index, value: searchCriteria.value, operator };
 
-    console.log(`[ADVANCED SEARCH] Searching: ${searchCriteria.columnName} = ${searchCriteria.value}`);
+    console.log(`[ADVANCED SEARCH] ${searchCriteria.columnName}[${col.index}] ${operator} "${searchCriteria.value}"`);
+    const result = csvUtils.searchProductAdvanced(rows, criteria, parserConfig.columns);
 
-    // Initialize CredentialCrypto
-    let credentialCrypto = null;
-    if (process.env.ENCRYPTION_SECRET) {
-      credentialCrypto = new CredentialCrypto(process.env.ENCRYPTION_SECRET);
+    if (result.found && result.product) {
+      result.product = applyMapping(result.product, mappingConfig);
     }
 
-    const handler = new NetworkPathHandlerWindows(credentialCrypto);
-
-    // Decrypt password
-    let password = connectorConfig.password;
-    if (credentialCrypto && password) {
-      try {
-        password = await credentialCrypto.decrypt(password);
-      } catch (error) {
-        console.error('[ADVANCED SEARCH] Decryption error:', error.message);
-        password = connectorConfig.password;
-      }
-    }
-
-    // Read file
-    const fileContent = await handler.readFile({
-      path: connectorConfig.path,
-      filename: connectorConfig.filename,
-      username: connectorConfig.username || null,
-      password: password || null,
-      domain: connectorConfig.domain || null
-    });
-
-    if (!fileContent) {
-      return res.status(400).json({
-        error: 'Failed to read file',
-        found: false
-      });
-    }
-
-    // Parse CSV
-    const rows = csvUtils.parseCSVContent(
-      fileContent,
-      parserConfig.delimiter,
-      parserConfig.hasHeader,
-      parserConfig.quoteChar,
-      parserConfig.escapeChar
-    );
-
-    // Advanced search
-    const result = csvUtils.searchProductAdvanced(
-      rows,
-      searchCriteria,
-      parserConfig.columnNames
-    );
-
-    console.log(`[ADVANCED SEARCH] Found: ${result.totalFound} results`);
+    console.log(`[ADVANCED SEARCH] Found: ${result.found}`);
     res.json(result);
 
   } catch (error) {
     console.error('[ADVANCED SEARCH ERROR]', error.message);
-    res.status(500).json({
-      error: error.message,
-      found: false
-    });
+    res.status(error.statusCode || 500).json({ error: error.message, found: false });
   }
 });
 
@@ -583,88 +602,27 @@ app.post('/api/product/search-multiple', async (req, res) => {
     const { productIds, searchColumnIndex } = req.body;
 
     if (!Array.isArray(productIds) || productIds.length === 0 || searchColumnIndex === undefined) {
-      return res.status(400).json({
-        error: 'Missing required fields: productIds (array), searchColumnIndex',
-        found: false
-      });
+      return res.status(400).json({ error: 'Missing required fields: productIds (array), searchColumnIndex', found: false });
     }
 
-    // Load configuration
-    if (!existsSync(CONFIG_FILE)) {
-      return res.status(400).json({
-        error: 'No saved configuration found',
-        found: false
-      });
-    }
-
-    const configData = readFileSync(CONFIG_FILE, 'utf-8');
-    const config = JSON.parse(configData);
-    const connectorConfig = config.connection;
-    const parserConfig = config.parser;
+    const { parserConfig, mappingConfig, rows } = await loadProductionContext();
 
     console.log(`[MULTIPLE SEARCH] Searching for ${productIds.length} products`);
+    const result = csvUtils.searchMultipleProducts(rows, productIds, searchColumnIndex, parserConfig.columns);
 
-    // Initialize CredentialCrypto
-    let credentialCrypto = null;
-    if (process.env.ENCRYPTION_SECRET) {
-      credentialCrypto = new CredentialCrypto(process.env.ENCRYPTION_SECRET);
+    if (Array.isArray(result.products)) {
+      result.products = result.products.map(item => ({
+        ...item,
+        product: applyMapping(item.product, mappingConfig)
+      }));
     }
 
-    const handler = new NetworkPathHandlerWindows(credentialCrypto);
-
-    // Decrypt password
-    let password = connectorConfig.password;
-    if (credentialCrypto && password) {
-      try {
-        password = await credentialCrypto.decrypt(password);
-      } catch (error) {
-        console.error('[MULTIPLE SEARCH] Decryption error:', error.message);
-        password = connectorConfig.password;
-      }
-    }
-
-    // Read file
-    const fileContent = await handler.readFile({
-      path: connectorConfig.path,
-      filename: connectorConfig.filename,
-      username: connectorConfig.username || null,
-      password: password || null,
-      domain: connectorConfig.domain || null
-    });
-
-    if (!fileContent) {
-      return res.status(400).json({
-        error: 'Failed to read file',
-        found: false
-      });
-    }
-
-    // Parse CSV
-    const rows = csvUtils.parseCSVContent(
-      fileContent,
-      parserConfig.delimiter,
-      parserConfig.hasHeader,
-      parserConfig.quoteChar,
-      parserConfig.escapeChar
-    );
-
-    // Search multiple
-    const result = csvUtils.searchMultipleProducts(
-      rows,
-      productIds,
-      searchColumnIndex,
-      parserConfig.columns  // Pass configured columns
-    );
-
-    console.log(`[MULTIPLE SEARCH] Found: ${result.totalFound}/${result.totalSearched}`);
+    console.log(`[MULTIPLE SEARCH] Found: ${result.totalFound}/${productIds.length}`);
     res.json(result);
 
   } catch (error) {
     console.error('[MULTIPLE SEARCH ERROR]', error.message);
-    res.status(500).json({
-      error: error.message,
-      found: false
-    });
+    res.status(error.statusCode || 500).json({ error: error.message, found: false });
   }
 });
 
@@ -683,91 +641,34 @@ app.post('/api/product/search-multiple', async (req, res) => {
  */
 app.post('/api/product/filter', async (req, res) => {
   try {
-    const { filters, limit } = req.body;
+    const { filters } = req.body;
 
     if (!Array.isArray(filters) || filters.length === 0) {
-      return res.status(400).json({
-        error: 'Missing required fields: filters (array)',
-        found: false
-      });
+      return res.status(400).json({ error: 'Missing required fields: filters (array of {columnName, value})', found: false });
     }
 
-    // Load configuration
-    if (!existsSync(CONFIG_FILE)) {
-      return res.status(400).json({
-        error: 'No saved configuration found',
-        found: false
-      });
-    }
+    const { parserConfig, mappingConfig, rows } = await loadProductionContext();
 
-    const configData = readFileSync(CONFIG_FILE, 'utf-8');
-    const config = JSON.parse(configData);
-    const connectorConfig = config.connection;
-    const parserConfig = config.parser;
+    const filterCriteria = {};
+    for (const f of filters) {
+      const col = parserConfig.columns.find(c => c.name === f.columnName);
+      if (!col) {
+        return res.status(400).json({ error: `Column "${f.columnName}" not found in parser configuration`, found: false });
+      }
+      filterCriteria[col.index] = f.value;
+    }
 
     console.log(`[FILTER] Applying ${filters.length} filter(s)`);
+    const result = csvUtils.filterProducts(rows, filterCriteria, parserConfig.columns);
 
-    // Initialize CredentialCrypto
-    let credentialCrypto = null;
-    if (process.env.ENCRYPTION_SECRET) {
-      credentialCrypto = new CredentialCrypto(process.env.ENCRYPTION_SECRET);
-    }
-
-    const handler = new NetworkPathHandlerWindows(credentialCrypto);
-
-    // Decrypt password
-    let password = connectorConfig.password;
-    if (credentialCrypto && password) {
-      try {
-        password = await credentialCrypto.decrypt(password);
-      } catch (error) {
-        console.error('[FILTER] Decryption error:', error.message);
-        password = connectorConfig.password;
-      }
-    }
-
-    // Read file
-    const fileContent = await handler.readFile({
-      path: connectorConfig.path,
-      filename: connectorConfig.filename,
-      username: connectorConfig.username || null,
-      password: password || null,
-      domain: connectorConfig.domain || null
-    });
-
-    if (!fileContent) {
-      return res.status(400).json({
-        error: 'Failed to read file',
-        found: false
-      });
-    }
-
-    // Parse CSV
-    const rows = csvUtils.parseCSVContent(
-      fileContent,
-      parserConfig.delimiter,
-      parserConfig.hasHeader,
-      parserConfig.quoteChar,
-      parserConfig.escapeChar
-    );
-
-    // Filter
-    const result = csvUtils.filterProducts(
-      rows,
-      filters,
-      parserConfig.columnNames,
-      limit || null
-    );
+    result.products = applyMappingToList(result.products, mappingConfig);
 
     console.log(`[FILTER] Found: ${result.totalFound} results`);
     res.json(result);
 
   } catch (error) {
     console.error('[FILTER ERROR]', error.message);
-    res.status(500).json({
-      error: error.message,
-      found: false
-    });
+    res.status(error.statusCode || 500).json({ error: error.message, found: false });
   }
 });
 
@@ -777,80 +678,136 @@ app.post('/api/product/filter', async (req, res) => {
  */
 app.get('/api/product/all', async (req, res) => {
   try {
-    // Load configuration
-    if (!existsSync(CONFIG_FILE)) {
-      return res.status(400).json({
-        error: 'No saved configuration found',
-        found: false
-      });
-    }
-
-    const configData = readFileSync(CONFIG_FILE, 'utf-8');
-    const config = JSON.parse(configData);
-    const connectorConfig = config.connection;
-    const parserConfig = config.parser;
+    const { parserConfig, mappingConfig, rows } = await loadProductionContext();
 
     console.log('[GET ALL] Loading all products');
+    const result = csvUtils.getAllProducts(rows, parserConfig.columns);
 
-    // Initialize CredentialCrypto
-    let credentialCrypto = null;
-    if (process.env.ENCRYPTION_SECRET) {
-      credentialCrypto = new CredentialCrypto(process.env.ENCRYPTION_SECRET);
-    }
+    result.products = applyMappingToList(result.products, mappingConfig);
 
-    const handler = new NetworkPathHandlerWindows(credentialCrypto);
-
-    // Decrypt password
-    let password = connectorConfig.password;
-    if (credentialCrypto && password) {
-      try {
-        password = await credentialCrypto.decrypt(password);
-      } catch (error) {
-        console.error('[GET ALL] Decryption error:', error.message);
-        password = connectorConfig.password;
-      }
-    }
-
-    // Read file
-    const fileContent = await handler.readFile({
-      path: connectorConfig.path,
-      filename: connectorConfig.filename,
-      username: connectorConfig.username || null,
-      password: password || null,
-      domain: connectorConfig.domain || null
-    });
-
-    if (!fileContent) {
-      return res.status(400).json({
-        error: 'Failed to read file',
-        found: false
-      });
-    }
-
-    // Parse CSV
-    const rows = csvUtils.parseCSVContent(
-      fileContent,
-      parserConfig.delimiter,
-      parserConfig.hasHeader,
-      parserConfig.quoteChar,
-      parserConfig.escapeChar
-    );
-
-    // Get all products
-    const result = csvUtils.getAllProducts(
-      rows,
-      parserConfig.columns  // Pass configured columns
-    );
-
-    console.log(`[GET ALL] Loaded: ${result.totalProducts} products`);
+    console.log(`[GET ALL] Loaded: ${result.totalFound} products`);
     res.json(result);
 
   } catch (error) {
     console.error('[GET ALL ERROR]', error.message);
-    res.status(500).json({
-      error: error.message,
-      found: false
+    res.status(error.statusCode || 500).json({ error: error.message, found: false });
+  }
+});
+
+/**
+ * POST /api/product/import
+ * Search CSV for a product, validate required fields, cache it, and log the attempt.
+ *
+ * Request body:
+ * {
+ *   "productCode":        "ASP001",
+ *   "searchColumnIndex":  1,
+ *   "confirmed":          false   // optional — only meaningful when triggerMode is "manual"
+ * }
+ *
+ * Response shapes:
+ *   { status: "IMPORTED",              product: {...}, fieldsImported: N }
+ *   { status: "NOT_FOUND"                                                }
+ *   { status: "VALIDATION_FAILED",     message: "..."                   }
+ *   { status: "CONFIRMATION_REQUIRED", message: "...", preview: {...}   }
+ */
+app.post('/api/product/import', async (req, res) => {
+  const { productCode, searchColumnIndex, confirmed = false } = req.body || {};
+  const timestamp = new Date().toISOString();
+
+  if (!productCode || searchColumnIndex === undefined) {
+    return res.status(400).json({ error: 'Missing required fields: productCode, searchColumnIndex' });
+  }
+
+  let context;
+  try {
+    context = await loadProductionContext();
+  } catch (err) {
+    insertSyncLog({ timestamp, productCode, result: 'ERROR', fieldsImported: 0, error: err.message });
+    return res.status(err.statusCode || 500).json({ error: err.message, status: 'ERROR' });
+  }
+
+  const { parserConfig, mappingConfig, rows, config } = context;
+  const validationRules = Array.isArray(config.validation) ? config.validation : [];
+  const persistence     = config.persistence || {};
+  const triggerMode     = persistence.triggerMode || 'auto';
+
+  // ── Search CSV ────────────────────────────────────────────────────────
+  const searchResult = csvUtils.searchProductInRows(rows, productCode, searchColumnIndex, parserConfig.columns);
+
+  if (!searchResult.found || !searchResult.product) {
+    insertSyncLog({ timestamp, productCode, result: 'NOT_FOUND', fieldsImported: 0, error: '' });
+    return res.json({ status: 'NOT_FOUND', productCode });
+  }
+
+  const mappedProduct = applyMapping(searchResult.product, mappingConfig);
+
+  // ── Validate required fields ─────────────────────────────────────────
+  for (const rule of validationRules) {
+    if (!rule.required) continue;
+    const value = mappedProduct[rule.jsonTag];
+    if (value === undefined || value === null || String(value).trim() === '') {
+      const message = `Product found in CSV but with incomplete data — field [${rule.jsonTag}] is empty`;
+      insertSyncLog({ timestamp, productCode, result: 'VALIDATION_FAILED', fieldsImported: 0, error: message });
+      return res.json({ status: 'VALIDATION_FAILED', message, productCode });
+    }
+  }
+
+  // ── Manual mode: ask for confirmation before importing ────────────────
+  if (triggerMode === 'manual' && !confirmed) {
+    return res.json({
+      status:   'CONFIRMATION_REQUIRED',
+      message:  `Product "${productCode}" found. Confirm import?`,
+      preview:  mappedProduct,
+      productCode
     });
+  }
+
+  // ── Import: cache + log ───────────────────────────────────────────────
+  const fieldsImported = Object.keys(mappedProduct).length;
+
+  try {
+    upsertProduct({ productCode, data: mappedProduct });
+  } catch (cacheErr) {
+    console.warn('[IMPORT] Cache write failed:', cacheErr.message);
+  }
+
+  insertSyncLog({ timestamp, productCode, result: 'FOUND', fieldsImported, error: '' });
+
+  return res.json({
+    status:         'IMPORTED',
+    productCode,
+    product:        mappedProduct,
+    fieldsImported,
+    rowIndex:       searchResult.rowIndex
+  });
+});
+
+/**
+ * GET /api/sync-log
+ * Return paginated sync log entries, newest first.
+ *
+ * Query params:
+ *   page  — 1-based (default 1)
+ *   limit — entries per page (default 20)
+ *
+ * Response:
+ * {
+ *   "entries":    [...],
+ *   "total":      42,
+ *   "page":       1,
+ *   "totalPages": 3
+ * }
+ */
+app.get('/api/sync-log', (req, res) => {
+  try {
+    const page  = Math.max(1, parseInt(req.query.page,  10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
+    const result = getSyncLog({ page, limit });
+    res.json(result);
+  } catch (err) {
+    console.error('[SYNC LOG ERROR]', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -860,74 +817,17 @@ app.get('/api/product/all', async (req, res) => {
  */
 app.get('/api/product/stats', async (req, res) => {
   try {
-    // Load configuration
-    if (!existsSync(CONFIG_FILE)) {
-      return res.status(400).json({
-        error: 'No saved configuration found'
-      });
-    }
-
-    const configData = readFileSync(CONFIG_FILE, 'utf-8');
-    const config = JSON.parse(configData);
-    const connectorConfig = config.connection;
-    const parserConfig = config.parser;
+    const { parserConfig, rows } = await loadProductionContext();
 
     console.log('[STATS] Calculating statistics');
-
-    // Initialize CredentialCrypto
-    let credentialCrypto = null;
-    if (process.env.ENCRYPTION_SECRET) {
-      credentialCrypto = new CredentialCrypto(process.env.ENCRYPTION_SECRET);
-    }
-
-    const handler = new NetworkPathHandlerWindows(credentialCrypto);
-
-    // Decrypt password
-    let password = connectorConfig.password;
-    if (credentialCrypto && password) {
-      try {
-        password = await credentialCrypto.decrypt(password);
-      } catch (error) {
-        console.error('[STATS] Decryption error:', error.message);
-        password = connectorConfig.password;
-      }
-    }
-
-    // Read file
-    const fileContent = await handler.readFile({
-      path: connectorConfig.path,
-      filename: connectorConfig.filename,
-      username: connectorConfig.username || null,
-      password: password || null,
-      domain: connectorConfig.domain || null
-    });
-
-    if (!fileContent) {
-      return res.status(400).json({
-        error: 'Failed to read file'
-      });
-    }
-
-    // Parse CSV
-    const rows = csvUtils.parseCSVContent(
-      fileContent,
-      parserConfig.delimiter,
-      parserConfig.hasHeader,
-      parserConfig.quoteChar,
-      parserConfig.escapeChar
-    );
-
-    // Get statistics
-    const stats = csvUtils.getCSVStatistics(rows, parserConfig.columnNames);
+    const stats = csvUtils.getCSVStatistics(rows, parserConfig.columns);
 
     console.log('[STATS] Calculated');
     res.json(stats);
 
   } catch (error) {
     console.error('[STATS ERROR]', error.message);
-    res.status(500).json({
-      error: error.message
-    });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
@@ -968,13 +868,23 @@ app.use((err, req, res, next) => {
 /**
  * Start server
  */
-app.listen(PORT, () => {
-	console.log('🔥 ESTE ES MI SERVER REAL 🔥');
+app.listen(PORT, '0.0.0.0', () => {
+  const localIPs = getLocalIPs();
+
+  // Announce service via mDNS so any device on the network can reach http://int5.local:PORT
+  const bonjour = new Bonjour();
+  bonjour.publish({ name: 'INT5', type: 'http', port: PORT, host: 'int5.local' });
+
+  console.log('🔥 ESTE ES MI SERVER REAL 🔥');
   console.log(`\n${'='.repeat(50)}`);
   console.log(`Backend Server`);
   console.log(`${'='.repeat(50)}`);
   console.log(`\n✔ Server running on port ${PORT}`);
-  console.log(`✔ URL: http://localhost:${PORT}`);
+  console.log(`✔ Local:   http://localhost:${PORT}`);
+  console.log(`✔ mDNS:    http://int5.local:${PORT}  ← PC y teléfono (misma red)`);
+  localIPs.forEach(({ name, address }) => {
+    console.log(`✔ Network: http://${address}:${PORT}  [${name}]`);
+  });
   console.log(`✔ Endpoint: POST /test-connection`);
   console.log(`✔ Config API: POST /api/config/save`);
   console.log(`✔ Config API: GET /api/config/load`);
@@ -985,6 +895,8 @@ app.listen(PORT, () => {
   console.log(`✔ Product API: POST /api/product/filter`);
   console.log(`✔ Product API: GET /api/product/all`);
   console.log(`✔ Product API: GET /api/product/stats`);
+  console.log(`✔ Import API:  POST /api/product/import`);
+  console.log(`✔ Sync Log:    GET /api/sync-log`);
   console.log(`✔ Config file: ${CONFIG_FILE}`);
   console.log(`\n${'='.repeat(50)}\n`);
 });
