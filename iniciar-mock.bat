@@ -15,6 +15,9 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
+:: Abrir el navegador despues de 2 segundos (tiempo para que el servidor arranque)
+start "" cmd /c "timeout /t 2 /nobreak >nul && start http://localhost:3001/"
+
 :: Iniciar el servidor mock
 echo.
 echo  Iniciando INT5 Mock API Server...
