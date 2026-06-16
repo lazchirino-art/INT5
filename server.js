@@ -18,6 +18,7 @@ import NetworkPathHandlerWindows from './backend/network-path-handler-windows.js
 import CredentialCrypto from './backend/credential-crypto.js';
 import * as csvUtils from './backend/csv-utils.js';
 import { insertSyncLog, getSyncLog, upsertProduct } from './backend/local-db.js';
+import { fetchProduct, extractFields, getValueByPath } from './backend/api-resp-handler.js';
 
 /** Returns all non-loopback IPv4 addresses with their interface names. */
 function getLocalIPs() {
@@ -224,12 +225,26 @@ app.post('/api/config/save', (req, res) => {
     const unwrap = (val, key) =>
       val && typeof val === 'object' && val[key] ? val[key] : val;
 
+    // Deep-merge apiResp sub-sections so each tab saves only its own key
+    const existingApiResp = existingConfig.apiResp || {};
+    const newApiResp      = newConfig.apiResp      || {};
+    const mergedApiResp   = Object.keys(newApiResp).length > 0
+      ? {
+          connector:   newApiResp.connector   || existingApiResp.connector   || {},
+          schema:      newApiResp.schema      || existingApiResp.schema      || [],
+          mapping:     newApiResp.mapping     || existingApiResp.mapping     || [],
+          validation:  newApiResp.validation  || existingApiResp.validation  || [],
+          persistence: newApiResp.persistence || existingApiResp.persistence || {}
+        }
+      : existingApiResp;
+
     const mergedConfig = {
       connection:  unwrap(newConfig.connection, 'connection') || unwrap(existingConfig.connection, 'connection') || {},
       parser:      newConfig.parser      || existingConfig.parser      || {},
       mapping:     newConfig.mapping     || existingConfig.mapping     || [],
       validation:  newConfig.validation  || existingConfig.validation  || [],
-      persistence: newConfig.persistence || existingConfig.persistence || {}
+      persistence: newConfig.persistence || existingConfig.persistence || {},
+      apiResp:     mergedApiResp
     };
 
     console.log('[CONFIG] Saving configuration...');
@@ -829,6 +844,168 @@ app.get('/api/product/stats', async (req, res) => {
     console.error('[STATS ERROR]', error.message);
     res.status(error.statusCode || 500).json({ error: error.message });
   }
+});
+
+/**
+ * POST /api/apiResp/test-connection
+ * Test an API-RESP connector by making a real HTTP request.
+ *
+ * Body: { connector, testProductCode } — inline connector config for live test
+ *    OR { useStoredConnector: true, testProductCode } — use saved config.apiResp.connector
+ *
+ * Response:
+ *   { status: 'SUCCESS', rawJson: {...}, fieldCount: N, preview: '...' }
+ *   { status: 'FAILED',  error: '...' }
+ */
+app.post('/api/apiResp/test-connection', async (req, res) => {
+  const { connector: inlineConnector, testProductCode = 'TEST001', useStoredConnector = false } = req.body || {};
+
+  let connector = inlineConnector;
+
+  if (useStoredConnector) {
+    if (!existsSync(CONFIG_FILE)) {
+      return res.json({ status: 'FAILED', error: 'No saved configuration. Save the Connector tab first.' });
+    }
+    try {
+      const config = JSON.parse(readFileSync(CONFIG_FILE, 'utf-8'));
+      connector = config?.apiResp?.connector;
+    } catch (e) {
+      return res.json({ status: 'FAILED', error: 'Failed to read saved configuration.' });
+    }
+  }
+
+  if (!connector?.baseUrl || !connector?.path) {
+    return res.json({ status: 'FAILED', error: 'Base URL and Endpoint Path are required.' });
+  }
+
+  try {
+    const rawJson   = await fetchProduct(connector, testProductCode);
+    const fields    = extractFields(rawJson);
+    const preview   = JSON.stringify(rawJson).slice(0, 200);
+    res.json({ status: 'SUCCESS', rawJson, fieldCount: fields.length, preview });
+  } catch (err) {
+    res.json({ status: 'FAILED', error: err.message });
+  }
+});
+
+/**
+ * POST /api/product/import-api
+ * Import a product via API-RESP integration.
+ *
+ * Body:
+ *   { productCode, confirmed? }
+ *
+ * Response shapes (mirror /api/product/import):
+ *   { status: 'IMPORTED',              product: {...}, fieldsImported: N }
+ *   { status: 'NOT_FOUND'                                                }
+ *   { status: 'VALIDATION_FAILED',     message: '...'                   }
+ *   { status: 'CONFIRMATION_REQUIRED', message: '...', preview: {...}   }
+ *   { status: 'ERROR',                 error: '...'                     }
+ */
+app.post('/api/product/import-api', async (req, res) => {
+  const { productCode, confirmed = false } = req.body || {};
+  const timestamp = new Date().toISOString();
+
+  if (!productCode) {
+    return res.status(400).json({ error: 'Missing required field: productCode', status: 'ERROR' });
+  }
+
+  if (!existsSync(CONFIG_FILE)) {
+    return res.status(400).json({ error: 'No saved configuration. Complete the API-RESP setup first.', status: 'ERROR' });
+  }
+
+  let appConfig;
+  try {
+    appConfig = JSON.parse(readFileSync(CONFIG_FILE, 'utf-8'));
+  } catch (e) {
+    return res.status(500).json({ error: 'Configuration file is corrupted.', status: 'ERROR' });
+  }
+
+  const apiResp       = appConfig.apiResp || {};
+  const connector     = apiResp.connector     || {};
+  const schemaFields  = Array.isArray(apiResp.schema)     ? apiResp.schema.filter(s => s.include !== false) : [];
+  const mappingConfig = Array.isArray(apiResp.mapping)    ? apiResp.mapping.filter(m => m.include !== false) : [];
+  const validRules    = Array.isArray(apiResp.validation) ? apiResp.validation : [];
+  const triggerMode   = apiResp.persistence?.triggerMode || 'auto';
+
+  if (!connector.baseUrl || !connector.path) {
+    return res.status(400).json({ error: 'API connector not configured. Complete the Connector tab first.', status: 'ERROR' });
+  }
+
+  // ── Fetch from external API ───────────────────────────────────────────
+  let rawJson;
+  try {
+    rawJson = await fetchProduct(connector, productCode);
+  } catch (err) {
+    insertSyncLog({ timestamp, productCode, result: 'NOT_FOUND', fieldsImported: 0, error: err.message, source: 'apiResp' });
+    return res.json({ status: 'NOT_FOUND', productCode, error: err.message });
+  }
+
+  if (!rawJson || typeof rawJson !== 'object') {
+    insertSyncLog({ timestamp, productCode, result: 'NOT_FOUND', fieldsImported: 0, error: 'Empty or non-JSON response', source: 'apiResp' });
+    return res.json({ status: 'NOT_FOUND', productCode });
+  }
+
+  // ── Extract included fields → flat object ────────────────────────────
+  const flatProduct = {};
+  if (schemaFields.length > 0) {
+    schemaFields.forEach(field => {
+      flatProduct[field.path] = getValueByPath(rawJson, field.path);
+    });
+  } else {
+    // No schema: use all detected fields
+    extractFields(rawJson).forEach(f => { flatProduct[f.path] = f.value; });
+  }
+
+  // ── Apply mapping (fieldPath → jsonTag) ─────────────────────────────
+  let mappedProduct;
+  if (mappingConfig.length > 0) {
+    mappedProduct = {};
+    mappingConfig.forEach(({ fieldPath, jsonTag }) => {
+      if (fieldPath in flatProduct) mappedProduct[jsonTag] = flatProduct[fieldPath];
+    });
+  } else {
+    mappedProduct = flatProduct;
+  }
+
+  // ── Validate required fields ─────────────────────────────────────────
+  for (const rule of validRules) {
+    if (!rule.required) continue;
+    const value = mappedProduct[rule.jsonTag];
+    if (value === undefined || value === null || String(value).trim() === '') {
+      const message = `Product found in API but with incomplete data — field [${rule.jsonTag}] is empty`;
+      insertSyncLog({ timestamp, productCode, result: 'VALIDATION_FAILED', fieldsImported: 0, error: message, source: 'apiResp' });
+      return res.json({ status: 'VALIDATION_FAILED', message, productCode });
+    }
+  }
+
+  // ── Manual mode: ask for confirmation before importing ────────────────
+  if (triggerMode === 'manual' && !confirmed) {
+    return res.json({
+      status:  'CONFIRMATION_REQUIRED',
+      message: `Product "${productCode}" found. Confirm import?`,
+      preview: mappedProduct,
+      productCode
+    });
+  }
+
+  // ── Import: cache + log ───────────────────────────────────────────────
+  const fieldsImported = Object.keys(mappedProduct).length;
+
+  try {
+    upsertProduct({ productCode, data: mappedProduct });
+  } catch (cacheErr) {
+    console.warn('[IMPORT-API] Cache write failed:', cacheErr.message);
+  }
+
+  insertSyncLog({ timestamp, productCode, result: 'FOUND', fieldsImported, error: '', source: 'apiResp' });
+
+  return res.json({
+    status:         'IMPORTED',
+    productCode,
+    product:        mappedProduct,
+    fieldsImported
+  });
 });
 
 /**

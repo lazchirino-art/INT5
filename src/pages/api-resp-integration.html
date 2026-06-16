@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Integration Builder - API-RESP</title>
+<link rel="stylesheet" href="../styles/csv-integration.css">
+</head>
+
+<body>
+<div class="container">
+    <h1>API-RESP Integration Configuration</h1>
+
+    <div class="tabs">
+        <div class="tab active"   onclick="openApiRespTab(0)">1. Connector</div>
+        <div class="tab"          onclick="openApiRespTab(1)">2. Response Schema</div>
+        <div class="tab"          onclick="openApiRespTab(2)">3. Mapping</div>
+        <div class="tab"          onclick="openApiRespTab(3)">4. Validation</div>
+        <div class="tab"          onclick="openApiRespTab(4)">5. Persistence</div>
+    </div>
+
+    <!-- TAB 1: CONNECTOR -->
+    <div class="tab-content active">
+        <h2>API Connector Configuration</h2>
+
+        <div class="form-group">
+            <label>Base URL *</label>
+            <input type="text" id="arBaseUrl" placeholder="https://api.client.com" spellcheck="false">
+        </div>
+
+        <div class="form-group">
+            <label>Endpoint Path *</label>
+            <input type="text" id="arPath" placeholder="/products/{productCode}" spellcheck="false">
+            <small>Use <code>{productCode}</code> as a placeholder for the scanned code.</small>
+        </div>
+
+        <div class="form-group">
+            <label>HTTP Method *</label>
+            <select id="arMethod" onchange="ApiRespConnectorUI.handleMethodChange()">
+                <option value="GET">GET</option>
+                <option value="POST">POST</option>
+            </select>
+        </div>
+
+        <div class="form-group" id="arBodyGroup" style="display:none;">
+            <label>Request Body Template</label>
+            <textarea id="arBodyTemplate" rows="5"
+                placeholder='{"code": "{productCode}"}'
+                spellcheck="false"></textarea>
+            <small>Use <code>{productCode}</code> in the body template to inject the scanned code.</small>
+        </div>
+
+        <div class="form-group">
+            <label>Authentication</label>
+            <select id="arAuthType" onchange="ApiRespConnectorUI.handleAuthTypeChange()">
+                <option value="none">None</option>
+                <option value="apiKey">API Key (Header)</option>
+                <option value="bearer">Bearer Token</option>
+                <option value="basic">Basic Auth</option>
+            </select>
+        </div>
+
+        <div id="arApiKeyFields" style="display:none;">
+            <div class="form-group">
+                <label>Header Name *</label>
+                <input type="text" id="arApiKeyHeader" placeholder="X-API-Key" spellcheck="false">
+            </div>
+            <div class="form-group">
+                <label>Header Value *</label>
+                <input type="password" id="arApiKeyValue" placeholder="api-key-value">
+            </div>
+        </div>
+
+        <div id="arBearerFields" style="display:none;">
+            <div class="form-group">
+                <label>Bearer Token *</label>
+                <input type="password" id="arBearerToken" placeholder="eyJ...">
+            </div>
+        </div>
+
+        <div id="arBasicFields" style="display:none;">
+            <div class="form-group">
+                <label>Username *</label>
+                <input type="text" id="arBasicUsername" placeholder="username" spellcheck="false">
+            </div>
+            <div class="form-group">
+                <label>Password *</label>
+                <input type="password" id="arBasicPassword" placeholder="password">
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>Test Product Code</label>
+            <input type="text" id="arTestCode" placeholder="TEST001" spellcheck="false">
+        </div>
+
+        <div class="connection-actions">
+            <button type="button" onclick="ApiRespConnectorUI.testConnection()">Test Connection</button>
+            <button class="save-config-button" type="button" id="arSaveConnectorBtn"
+                onclick="ApiRespConnectorUI.saveConnector()" disabled>Save Configuration</button>
+        </div>
+
+        <div class="connection-log" id="arConnectorLog">
+            <h3>Connection Test Log</h3>
+            <div id="arConnectorLogLines" class="log-lines">
+                <p>Fill in the connector form and run a test.</p>
+            </div>
+            <div id="arConnectorStatus" class="connection-status">STATUS: NOT TESTED</div>
+            <div id="arConnectorSaveStatus" class="save-status">SAVE: NOT SAVED</div>
+        </div>
+    </div>
+
+    <!-- TAB 2: RESPONSE SCHEMA -->
+    <div class="tab-content">
+        <h2>Response Schema</h2>
+        <p class="mapping-description">
+            Paste a sample JSON response from the API, or fetch one live using the saved connector.
+            The wizard detects all fields automatically. Uncheck <strong>Include</strong> to exclude a field.
+        </p>
+
+        <div class="form-group">
+            <label>Sample JSON Response</label>
+            <textarea id="arSampleJson" rows="10"
+                placeholder='{"code":"ASP001","name":"Aspirin 100mg","price":4.99}'
+                spellcheck="false"></textarea>
+        </div>
+
+        <div class="form-group">
+            <label>Live Test Code (for Fetch from API)</label>
+            <input type="text" id="arSchemaTestCode" placeholder="TEST001" spellcheck="false">
+        </div>
+
+        <div class="connection-actions">
+            <button type="button" onclick="ApiRespSchemaUI.parseJson()">Parse JSON</button>
+            <button type="button" onclick="ApiRespSchemaUI.fetchFromApi()">Fetch from API</button>
+            <button class="save-config-button" type="button" id="arSaveSchemaBtn"
+                onclick="ApiRespSchemaUI.saveSchema()" disabled>Save Schema</button>
+        </div>
+
+        <div id="arSchemaLogLines" class="log-lines"></div>
+        <div id="arSchemaStatus" class="parser-status">STATUS: —</div>
+
+        <table class="table" id="arSchemaTable">
+            <thead>
+                <tr>
+                    <th>Field Path</th>
+                    <th>Example Value</th>
+                    <th>Include</th>
+                </tr>
+            </thead>
+            <tbody id="arSchemaBody">
+                <tr>
+                    <td colspan="3" class="mapping-placeholder">
+                        Parse a JSON response to detect fields.
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- TAB 3: MAPPING -->
+    <div class="tab-content">
+        <h2>Field Mapping</h2>
+        <p class="mapping-description">
+            Assign a JSON output tag to each API response field.
+            Uncheck <strong>Include</strong> to exclude a field from the product response.
+        </p>
+
+        <div class="mapping-actions">
+            <button type="button" id="arSaveMappingBtn" class="save-config-button"
+                onclick="ApiRespMappingUI.saveMapping()">Save Mapping</button>
+            <span id="arMappingStatus" class="mapping-status mapping-status--idle">MAPPING: NOT SAVED</span>
+        </div>
+
+        <table class="table" id="arMappingTable">
+            <thead>
+                <tr>
+                    <th>Field Path</th>
+                    <th>JSON Tag (Output)</th>
+                    <th>Include</th>
+                </tr>
+            </thead>
+            <tbody id="arMappingBody">
+                <tr>
+                    <td colspan="3" class="mapping-placeholder">
+                        Save the Response Schema to populate this table.
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- TAB 4: VALIDATION -->
+    <div class="tab-content">
+        <h2>Validation Rules</h2>
+        <p class="validation-description">
+            Mark fields as <strong>Required</strong> to reject products with empty values.
+            Unchecked (Optional) fields are imported as <code>""</code> when missing.
+            When a required field is empty, the operator receives:
+            <em>"Product found in API but with incomplete data — field [X] is empty"</em>.
+        </p>
+
+        <div class="validation-actions">
+            <button type="button" id="arSaveValidationBtn" class="save-config-button">Save Validation Rules</button>
+            <span id="arValidationStatus" class="validation-status validation-status--idle">VALIDATION: NOT SAVED</span>
+        </div>
+
+        <table class="table" id="arValidationTable">
+            <thead>
+                <tr>
+                    <th>Field Path</th>
+                    <th>JSON Tag (Output)</th>
+                    <th>Required</th>
+                </tr>
+            </thead>
+            <tbody id="arValidationBody">
+                <tr>
+                    <td colspan="3" class="validation-placeholder">
+                        Save the Mapping configuration to populate this table.
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- TAB 5: PERSISTENCE -->
+    <div class="tab-content">
+        <h2>Persistence &amp; Sync</h2>
+
+        <div class="persistence-settings">
+            <div class="form-group">
+                <label>Trigger Mode</label>
+                <select id="arTriggerMode">
+                    <option value="auto">Auto — Silently fetch, validate and import on every call</option>
+                    <option value="manual">Manual — Ask operator for confirmation before importing</option>
+                </select>
+            </div>
+            <div class="persistence-actions">
+                <button type="button" id="arSavePersistenceBtn" class="save-config-button">Save Persistence Config</button>
+                <span id="arPersistenceStatus" class="persistence-status persistence-status--idle">PERSISTENCE: NOT SAVED</span>
+            </div>
+        </div>
+
+        <div class="sync-log-section">
+            <div class="sync-log-header">
+                <h3>Sync Log (API-RESP)</h3>
+                <button type="button" id="arSyncLogRefresh" class="sync-log-refresh-btn"
+                    onclick="ApiRespPersistenceUI.loadLog(ApiRespPersistenceUI._currentPage)">↻ Refresh</button>
+            </div>
+            <table class="table" id="arSyncLogTable">
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Product Code</th>
+                        <th>Result</th>
+                        <th>Fields Imported</th>
+                        <th>Error</th>
+                    </tr>
+                </thead>
+                <tbody id="arSyncLogBody">
+                    <tr>
+                        <td colspan="5" class="sync-log-empty">No log entries yet.</td>
+                    </tr>
+                </tbody>
+            </table>
+            <div id="arSyncLogPagination" class="sync-log-pagination"></div>
+        </div>
+    </div>
+
+</div>
+
+<script src="../js/api-resp-connector-ui.js"></script>
+<script src="../js/api-resp-schema-ui.js"></script>
+<script src="../js/api-resp-mapping-ui.js"></script>
+<script src="../js/api-resp-validation-ui.js"></script>
+<script src="../js/api-resp-persistence-ui.js"></script>
+<script src="../js/api-resp-integration.js"></script>
+</body>
+</html>
