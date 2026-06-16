@@ -320,81 +320,35 @@ async function loadStoredConnectionConfigForRuntime() {
 }
 
 async function persistConfiguration(config) {
-    // Intentar guardar en backend API primero
-    try {
-        console.log('[persistConfiguration] Saving to backend API...');
-        const response = await fetch('/api/config/save', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(config)
-        });
-        
-        if (response.ok) {
-            const data = await response.json();
-            console.log('[persistConfiguration] Configuration saved to backend:', data);
-            return;
-        } else {
-            console.warn('[persistConfiguration] Backend API error:', response.status);
-        }
-    } catch (error) {
-        console.error('[persistConfiguration] Error saving to backend API:', error);
-    }
-    
-    // Fallback: Guardar en AppConfigStore si está disponible
-    if (window.AppConfigStore?.saveConfig) {
-        console.log('[persistConfiguration] Falling back to AppConfigStore');
-        await window.AppConfigStore.saveConfig(config);
-        return;
+    const response = await fetch('/api/config/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config)
+    });
+
+    if (!response.ok) {
+        throw new Error(`Server error ${response.status} — configuration not saved`);
     }
 
-    // Final fallback: Guardar en localStorage
-    console.log('[persistConfiguration] Falling back to localStorage');
-    localStorage.setItem(connectionStorageKey, JSON.stringify(config));
+    const data = await response.json();
+    if (data.status !== 'SUCCESS') {
+        throw new Error(data.error || 'Configuration not saved');
+    }
 }
 
 async function loadPersistedConfiguration() {
-    // Intentar cargar desde backend API primero
-    try {
-        console.log('[loadPersistedConfiguration] Loading from backend API...');
-        const response = await fetch('/api/config/load');
-        
-        if (response.ok) {
-            const data = await response.json();
-            if (data.status === 'SUCCESS' && data.config) {
-                console.log('[loadPersistedConfiguration] Configuration loaded from backend');
-                return data.config;
-            }
-            if (data.status === 'NOT_FOUND') {
-                console.log('[loadPersistedConfiguration] No configuration found in backend');
-            }
-        } else {
-            console.warn('[loadPersistedConfiguration] Backend API error:', response.status);
-        }
-    } catch (error) {
-        console.error('[loadPersistedConfiguration] Error loading from backend API:', error);
-    }
-    
-    // Fallback: Cargar desde AppConfigStore si está disponible
-    try {
-        if (window.AppConfigStore?.loadConfig) {
-            console.log('[loadPersistedConfiguration] Falling back to AppConfigStore');
-            return window.AppConfigStore.loadConfig();
-        }
-    } catch (error) {
-        console.error('[loadPersistedConfiguration] AppConfigStore error:', error);
+    const response = await fetch('/api/config/load');
+
+    if (!response.ok) {
+        throw new Error(`Server error ${response.status} — could not load configuration`);
     }
 
-    // Final fallback: Cargar desde localStorage
-    try {
-        console.log('[loadPersistedConfiguration] Falling back to localStorage');
-        const storedConfig = localStorage.getItem(connectionStorageKey);
-        return storedConfig ? JSON.parse(storedConfig) : null;
-    } catch (error) {
-        console.error('[loadPersistedConfiguration] localStorage error:', error);
-        return null;
+    const data = await response.json();
+    if (data.status === 'SUCCESS' && data.config) {
+        return data.config;
     }
+
+    return null;
 }
 
 function setSaveStatus(status, message) {

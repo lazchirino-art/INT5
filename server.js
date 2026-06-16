@@ -290,8 +290,7 @@ app.get('/api/config/load', (req, res) => {
 
     const configData = readFileSync(CONFIG_FILE, 'utf-8');
     const config = JSON.parse(configData);
-	console.log('[DEBUG CONFIG LOADED]:', config);
-    
+
     console.log('[CONFIG] Configuration loaded successfully');
     res.json({ 
       status: 'SUCCESS', 
