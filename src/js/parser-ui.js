@@ -755,6 +755,9 @@ class ParserUI {
         input.addEventListener('change', () => this.updateCheckButtonState());
       });
 
+      // Re-evaluate the Check button now that columns are loaded
+      this.updateCheckButtonState();
+
       console.log('[ParserUI] Parser configuration rendered successfully');
       return true;
 

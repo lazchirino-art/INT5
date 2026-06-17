@@ -38,6 +38,11 @@ function openTab(index) {
     tabs[index].classList.add('active');
     contents[index].classList.add('active');
 
+    // Tab 1 = Parser — re-evaluate Check button (connector may now be READY/SAVED)
+    if (index === 1 && window.ParserUI) {
+        ParserUI.updateCheckButtonState();
+    }
+
     // Tab 2 = Mapping (0-based index)
     if (index === 2 && window.MappingUI) {
         MappingUI.loadFromParser();
