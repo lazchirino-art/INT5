@@ -1305,13 +1305,19 @@ button:focus-visible,
     color: var(--text);
 }
 
-/* Sync log table — consistent cell layout (mirrors the mock production view) */
+/* Sync log table — fixed layout so columns don't collapse and long text
+   (e.g. error messages) wraps by word instead of one char per line */
+#syncLogTable {
+    table-layout: fixed;
+    width: 100%;
+}
 #syncLogTable th,
 #syncLogTable td {
     text-align: left;
     vertical-align: top;
     padding: 7px 10px;
     font-size: 12.5px;
+    overflow-wrap: anywhere;
 }
 #syncLogTable th {
     font-size: 11px;
@@ -1320,12 +1326,21 @@ button:focus-visible,
     color: var(--muted);
     font-weight: 600;
 }
-.sync-log-ts     { color: var(--muted); white-space: nowrap; }
+/* Column widths (sum = 100%) */
+#syncLogTable th:nth-child(1), #syncLogTable td:nth-child(1) { width: 13%; }  /* timestamp */
+#syncLogTable th:nth-child(2), #syncLogTable td:nth-child(2) { width: 10%; }  /* code */
+#syncLogTable th:nth-child(3), #syncLogTable td:nth-child(3) { width: 10%; }  /* result */
+#syncLogTable th:nth-child(4), #syncLogTable td:nth-child(4) { width: 13%; }  /* requested by */
+#syncLogTable th:nth-child(5), #syncLogTable td:nth-child(5) { width: 13%; }  /* confirmed by */
+#syncLogTable th:nth-child(6), #syncLogTable td:nth-child(6) { width: 21%; }  /* fields */
+#syncLogTable th:nth-child(7), #syncLogTable td:nth-child(7) { width: 20%; }  /* error */
+
+.sync-log-ts     { color: var(--muted); }
 .sync-log-code   { font-family: monospace; font-weight: 600; }
 .sync-log-user   { color: var(--muted); }
 .sync-log-fields { color: var(--muted); line-height: 1.5; }
 .sync-log-fields b { color: var(--text); font-weight: 600; }
-.sync-log-error  { color: #b91c1c; max-width: 240px; word-break: break-word; }
+.sync-log-error  { color: #b91c1c; }
 
 /* Result as a pill, like the mock */
 .sync-log-result {

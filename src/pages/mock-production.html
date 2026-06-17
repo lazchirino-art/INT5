@@ -46,7 +46,8 @@
   .log-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
   .log-head button{background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 12px;cursor:pointer;font-size:13px}
   table.log{width:100%;border-collapse:collapse;font-size:12.5px}
-  table.log th,table.log td{padding:7px 9px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top}
+  table.log{table-layout:fixed}
+  table.log th,table.log td{padding:7px 9px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top;overflow-wrap:anywhere}
   table.log th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
   .pill{font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px}
   .pill.found{background:var(--okbg);color:#065f46}
@@ -247,6 +248,7 @@ async function loadLog(){
       const r=e.result||'';
       const cls = r==='FOUND'?'found':r==='NOT_FOUND'?'nf':r==='VALIDATION_FAILED'?'vf':'err';
       const fields = e.fields ? Object.entries(e.fields).map(([k,v])=>`<b>${esc(k)}</b>:${esc(String(v))}`).join(', ') : '—';
+      const err = e.error||''; const errShort = err.length>160 ? err.slice(0,160)+'…' : err;
       return `<tr>
         <td>${esc(new Date(e.timestamp).toLocaleString())}</td>
         <td>${esc(e.productCode||'')}</td>
@@ -254,7 +256,7 @@ async function loadLog(){
         <td>${esc(e.requestedBy||'—')}</td>
         <td>${esc(e.confirmedBy||'—')}</td>
         <td class="log-fields">${fields}</td>
-        <td>${esc(e.error||'')}</td>
+        <td title="${esc(err)}">${esc(errShort)}</td>
       </tr>`;
     }).join('');
   }catch(e){ $('logBody').innerHTML=`<tr><td colspan="7" class="empty">Error al cargar el log.</td></tr>`; }

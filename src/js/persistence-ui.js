@@ -164,6 +164,8 @@ class PersistenceUI {
             const r = e.result || '';
             const cls = r === 'FOUND' ? 'found' : r === 'NOT_FOUND' ? 'notfound' : 'failed';
             const ts = e.timestamp ? new Date(e.timestamp).toLocaleString() : '';
+            const err = e.error || '';
+            const errShort = err.length > 160 ? err.slice(0, 160) + '…' : err;
             return `
             <tr>
               <td class="sync-log-ts">${PersistenceUI._esc(ts)}</td>
@@ -172,7 +174,7 @@ class PersistenceUI {
               <td class="sync-log-user">${PersistenceUI._esc(e.requestedBy || '—')}</td>
               <td class="sync-log-user">${PersistenceUI._esc(e.confirmedBy || '—')}</td>
               <td class="sync-log-fields">${PersistenceUI._formatFields(e.fields)}</td>
-              <td class="sync-log-error">${PersistenceUI._esc(e.error || '')}</td>
+              <td class="sync-log-error" title="${PersistenceUI._esc(err)}">${PersistenceUI._esc(errShort)}</td>
             </tr>`;
           }).join('');
         }
