@@ -182,7 +182,7 @@ const doc = new Document({
         ["POST /api/product/import-api", "Endpoint principal API-RESP"],
         ["POST /api/apiResp/test-connection", "Prueba la API externa y detecta campos"],
         ["GET /api/sync-log", "Historial de importaciones (paginado, append-only)"],
-        ["POST /api/product/search*, filter, /all, /stats", "Consultas directas al CSV"],
+        ["POST /api/product/search*, filter, /all, /stats", "Consultas directas al CSV — [OPCIONAL], no usados por el flujo de producción actual"],
       ], [4200, 5160]),
 
       // 7

@@ -581,6 +581,9 @@ app.post('/api/connector/read-file', async (req, res) => {
  *   "searchTime": 245
  * }
  */
+// [OPCIONAL] API de consulta directa — NO la usa el flujo de producción actual
+// (que usa import + search-column + sync-log). Se mantiene por si producción
+// necesita búsquedas/listados directos en el futuro.
 app.post('/api/product/search', async (req, res) => {
   try {
     const { productId, searchColumnIndex } = req.body;
@@ -621,6 +624,7 @@ app.post('/api/product/search', async (req, res) => {
  *   }
  * }
  */
+// [OPCIONAL] No usado por el flujo de producción actual.
 app.post('/api/product/search-advanced', async (req, res) => {
   try {
     const { searchCriteria } = req.body;
@@ -665,6 +669,7 @@ app.post('/api/product/search-advanced', async (req, res) => {
  *   "searchColumnIndex": 1
  * }
  */
+// [OPCIONAL] No usado por el flujo de producción actual.
 app.post('/api/product/search-multiple', async (req, res) => {
   try {
     const { productIds, searchColumnIndex } = req.body;
@@ -707,6 +712,7 @@ app.post('/api/product/search-multiple', async (req, res) => {
  *   "limit": 50
  * }
  */
+// [OPCIONAL] No usado por el flujo de producción actual.
 app.post('/api/product/filter', async (req, res) => {
   try {
     const { filters } = req.body;
@@ -744,6 +750,7 @@ app.post('/api/product/filter', async (req, res) => {
  * GET /api/product/all
  * Get all products
  */
+// [OPCIONAL] No usado por el flujo de producción actual.
 app.get('/api/product/all', async (req, res) => {
   try {
     const { parserConfig, mappingConfig, rows } = await loadProductionContext();
@@ -897,6 +904,7 @@ app.get('/api/sync-log', (req, res) => {
  * GET /api/product/stats
  * Get CSV statistics
  */
+// [OPCIONAL] No usado por el flujo de producción actual.
 app.get('/api/product/stats', async (req, res) => {
   try {
     const { parserConfig, rows } = await loadProductionContext();

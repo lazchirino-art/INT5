@@ -313,6 +313,8 @@ Devuelve el historial de todas las llamadas a `/api/product/import`, ordenado de
 
 ## Búsqueda y consulta
 
+> ⚠️ **[OPCIONAL] Estos endpoints NO los usa el flujo de producción actual** (que usa `import` + `search-column` + `sync-log`). Se mantienen como API de consulta directa por si producción necesita búsquedas/listados/estadísticas en el futuro. Pueden eliminarse sin afectar al flujo de importación.
+
 Estos endpoints son para consultas directas al CSV sin pasar por el flujo de validación/import.
 
 ### `POST /api/product/search`
