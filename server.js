@@ -51,9 +51,14 @@ if (!existsSync(CONFIG_DIR)) {
 app.use(cors());
 app.use(express.json());
 
+// Evita que el navegador sirva versiones cacheadas de JS/CSS/HTML.
+// En local (kiosco) el coste es nulo y evita ver vistas desactualizadas.
+const noCache = (res) => res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+
 // Servir archivos estáticos con tipos MIME correctos
 app.use('/src/js', express.static(join(__dirname, 'src', 'js'), {
   setHeaders: (res, path) => {
+    noCache(res);
     if (path.endsWith('.js')) {
       res.setHeader('Content-Type', 'application/javascript');
     }
@@ -62,6 +67,7 @@ app.use('/src/js', express.static(join(__dirname, 'src', 'js'), {
 
 app.use('/src/styles', express.static(join(__dirname, 'src', 'styles'), {
   setHeaders: (res, path) => {
+    noCache(res);
     if (path.endsWith('.css')) {
       res.setHeader('Content-Type', 'text/css');
     }
@@ -76,10 +82,10 @@ app.use('/config', express.static(join(__dirname, 'config'), {
   }
 }));
 
-app.use('/src/pages', express.static(join(__dirname, 'src', 'pages')));
+app.use('/src/pages', express.static(join(__dirname, 'src', 'pages'), { setHeaders: noCache }));
 
 // Servir archivos estáticos generales
-app.use(express.static(join(__dirname, 'src')));
+app.use(express.static(join(__dirname, 'src'), { setHeaders: noCache }));
 
 /**
  * Apply field mapping to a single product object.
