@@ -60,8 +60,11 @@ class NetworkPathHandlerWindows {
 		return `cmd /c dir ${escapedPath}`;
 	  }
 
-	  // CON credenciales
-	  return `cmd /c "net use ${escapedPath} /delete /y & net use ${escapedPath} /user:${credentials.username} ${credentials.password} && dir ${escapedPath}"`;
+	  // CON credenciales — incluir dominio igual que readFile (DOMINIO\usuario)
+	  const credFormat = credentials.domain
+	    ? `${credentials.domain}\\${credentials.username}`
+	    : credentials.username;
+	  return `cmd /c "net use ${escapedPath} /delete /y & net use ${escapedPath} /user:${credFormat} ${credentials.password} && dir ${escapedPath}"`;
 	}
 
   /**
@@ -105,7 +108,8 @@ class NetworkPathHandlerWindows {
 				      line.startsWith('Dir(s)') ||
 				      line.startsWith('Serial')) return false;
 				  
-				  // Skip directory markers (. and ..)
+				  // Skip directory entries (folders, . and ..) — they also start with a date but show <DIR>
+				  if (line.includes('<DIR>')) return false;
 				  if (line.trim() === '.' || line.trim() === '..') return false;
 				  
 				  // File lines start with date (DD/MM/YYYY or MM/DD/YYYY)
@@ -135,6 +139,25 @@ class NetworkPathHandlerWindows {
       return files;
     } catch (error) {
 		const msg = error.message.toLowerCase();
+
+		// Auth disabled + the folder rejected the (anonymous/process) identity →
+		// tell the operator clearly that credentials are needed.
+		const noCreds = !credentials.username || !credentials.password;
+		const authError =
+		  msg.includes('user name or password') ||
+		  msg.includes('nombre de usuario o la contraseña') ||
+		  msg.includes('access is denied') ||
+		  msg.includes('acceso denegado') ||
+		  msg.includes('system error 5') ||
+		  msg.includes('error de sistema 5');
+		if (noCreds && authError) {
+		  throw new Error(
+			'FOLDER REQUIRES CREDENTIALS<br>' +
+			'This shared folder requires authentication.<br>' +
+			'Enable "Authentication" and enter a valid username and password.'
+		  );
+		}
+
 		if (msg.includes('system error 67')) {
 		  throw new Error(
 			'SERVER NOT REACHABLE<br>' +

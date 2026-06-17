@@ -726,7 +726,13 @@ app.get('/api/product/all', async (req, res) => {
  *   { status: "CONFIRMATION_REQUIRED", message: "...", preview: {...}   }
  */
 app.post('/api/product/import', async (req, res) => {
-  const { productCode, searchColumnIndex, confirmed = false } = req.body || {};
+  const {
+    productCode,
+    searchColumnIndex,
+    confirmed = false,
+    requestedBy = 'unknown',   // operator that triggered the request (sent by production app)
+    confirmedBy = null         // operator/supervisor that validated (manual mode confirmation)
+  } = req.body || {};
   const timestamp = new Date().toISOString();
 
   if (!productCode || searchColumnIndex === undefined) {
@@ -737,7 +743,7 @@ app.post('/api/product/import', async (req, res) => {
   try {
     context = await loadProductionContext();
   } catch (err) {
-    insertSyncLog({ timestamp, productCode, result: 'ERROR', fieldsImported: 0, error: err.message });
+    insertSyncLog({ timestamp, productCode, result: 'ERROR', fields: null, error: err.message, requestedBy, confirmedBy });
     return res.status(err.statusCode || 500).json({ error: err.message, status: 'ERROR' });
   }
 
@@ -745,12 +751,13 @@ app.post('/api/product/import', async (req, res) => {
   const validationRules = Array.isArray(config.validation) ? config.validation : [];
   const persistence     = config.persistence || {};
   const triggerMode     = persistence.triggerMode || 'auto';
+  const validationLevel = persistence.validationLevel || 'superior';
 
   // ── Search CSV ────────────────────────────────────────────────────────
   const searchResult = csvUtils.searchProductInRows(rows, productCode, searchColumnIndex, parserConfig.columns);
 
   if (!searchResult.found || !searchResult.product) {
-    insertSyncLog({ timestamp, productCode, result: 'NOT_FOUND', fieldsImported: 0, error: '' });
+    insertSyncLog({ timestamp, productCode, result: 'NOT_FOUND', fields: null, error: '', requestedBy, confirmedBy });
     return res.json({ status: 'NOT_FOUND', productCode });
   }
 
@@ -762,7 +769,7 @@ app.post('/api/product/import', async (req, res) => {
     const value = mappedProduct[rule.jsonTag];
     if (value === undefined || value === null || String(value).trim() === '') {
       const message = `Product found in CSV but with incomplete data — field [${rule.jsonTag}] is empty`;
-      insertSyncLog({ timestamp, productCode, result: 'VALIDATION_FAILED', fieldsImported: 0, error: message });
+      insertSyncLog({ timestamp, productCode, result: 'VALIDATION_FAILED', fields: mappedProduct, error: message, requestedBy, confirmedBy });
       return res.json({ status: 'VALIDATION_FAILED', message, productCode });
     }
   }
@@ -770,30 +777,28 @@ app.post('/api/product/import', async (req, res) => {
   // ── Manual mode: ask for confirmation before importing ────────────────
   if (triggerMode === 'manual' && !confirmed) {
     return res.json({
-      status:   'CONFIRMATION_REQUIRED',
-      message:  `Product "${productCode}" found. Confirm import?`,
-      preview:  mappedProduct,
+      status:          'CONFIRMATION_REQUIRED',
+      message:         `Product "${productCode}" found. Confirm import?`,
+      validationLevel,                 // production decides: superior login vs same-user button
+      preview:         mappedProduct,
       productCode
     });
   }
 
   // ── Import: cache + log ───────────────────────────────────────────────
-  const fieldsImported = Object.keys(mappedProduct).length;
-
   try {
     upsertProduct({ productCode, data: mappedProduct });
   } catch (cacheErr) {
     console.warn('[IMPORT] Cache write failed:', cacheErr.message);
   }
 
-  insertSyncLog({ timestamp, productCode, result: 'FOUND', fieldsImported, error: '' });
+  insertSyncLog({ timestamp, productCode, result: 'FOUND', fields: mappedProduct, error: '', requestedBy, confirmedBy });
 
   return res.json({
-    status:         'IMPORTED',
+    status:    'IMPORTED',
     productCode,
-    product:        mappedProduct,
-    fieldsImported,
-    rowIndex:       searchResult.rowIndex
+    product:   mappedProduct,
+    rowIndex:  searchResult.rowIndex
   });
 });
 
@@ -902,7 +907,12 @@ app.post('/api/apiResp/test-connection', async (req, res) => {
  *   { status: 'ERROR',                 error: '...'                     }
  */
 app.post('/api/product/import-api', async (req, res) => {
-  const { productCode, confirmed = false } = req.body || {};
+  const {
+    productCode,
+    confirmed = false,
+    requestedBy = 'unknown',
+    confirmedBy = null
+  } = req.body || {};
   const timestamp = new Date().toISOString();
 
   if (!productCode) {
@@ -926,6 +936,7 @@ app.post('/api/product/import-api', async (req, res) => {
   const mappingConfig = Array.isArray(apiResp.mapping)    ? apiResp.mapping.filter(m => m.include !== false) : [];
   const validRules    = Array.isArray(apiResp.validation) ? apiResp.validation : [];
   const triggerMode   = apiResp.persistence?.triggerMode || 'auto';
+  const validationLevel = apiResp.persistence?.validationLevel || 'superior';
 
   if (!connector.baseUrl || !connector.path) {
     return res.status(400).json({ error: 'API connector not configured. Complete the Connector tab first.', status: 'ERROR' });
@@ -936,12 +947,12 @@ app.post('/api/product/import-api', async (req, res) => {
   try {
     rawJson = await fetchProduct(connector, productCode);
   } catch (err) {
-    insertSyncLog({ timestamp, productCode, result: 'NOT_FOUND', fieldsImported: 0, error: err.message, source: 'apiResp' });
+    insertSyncLog({ timestamp, productCode, result: 'NOT_FOUND', fields: null, error: err.message, source: 'apiResp', requestedBy, confirmedBy });
     return res.json({ status: 'NOT_FOUND', productCode, error: err.message });
   }
 
   if (!rawJson || typeof rawJson !== 'object') {
-    insertSyncLog({ timestamp, productCode, result: 'NOT_FOUND', fieldsImported: 0, error: 'Empty or non-JSON response', source: 'apiResp' });
+    insertSyncLog({ timestamp, productCode, result: 'NOT_FOUND', fields: null, error: 'Empty or non-JSON response', source: 'apiResp', requestedBy, confirmedBy });
     return res.json({ status: 'NOT_FOUND', productCode });
   }
 
@@ -973,7 +984,7 @@ app.post('/api/product/import-api', async (req, res) => {
     const value = mappedProduct[rule.jsonTag];
     if (value === undefined || value === null || String(value).trim() === '') {
       const message = `Product found in API but with incomplete data — field [${rule.jsonTag}] is empty`;
-      insertSyncLog({ timestamp, productCode, result: 'VALIDATION_FAILED', fieldsImported: 0, error: message, source: 'apiResp' });
+      insertSyncLog({ timestamp, productCode, result: 'VALIDATION_FAILED', fields: mappedProduct, error: message, source: 'apiResp', requestedBy, confirmedBy });
       return res.json({ status: 'VALIDATION_FAILED', message, productCode });
     }
   }
@@ -981,29 +992,27 @@ app.post('/api/product/import-api', async (req, res) => {
   // ── Manual mode: ask for confirmation before importing ────────────────
   if (triggerMode === 'manual' && !confirmed) {
     return res.json({
-      status:  'CONFIRMATION_REQUIRED',
-      message: `Product "${productCode}" found. Confirm import?`,
-      preview: mappedProduct,
+      status:          'CONFIRMATION_REQUIRED',
+      message:         `Product "${productCode}" found. Confirm import?`,
+      validationLevel,
+      preview:         mappedProduct,
       productCode
     });
   }
 
   // ── Import: cache + log ───────────────────────────────────────────────
-  const fieldsImported = Object.keys(mappedProduct).length;
-
   try {
     upsertProduct({ productCode, data: mappedProduct });
   } catch (cacheErr) {
     console.warn('[IMPORT-API] Cache write failed:', cacheErr.message);
   }
 
-  insertSyncLog({ timestamp, productCode, result: 'FOUND', fieldsImported, error: '', source: 'apiResp' });
+  insertSyncLog({ timestamp, productCode, result: 'FOUND', fields: mappedProduct, error: '', source: 'apiResp', requestedBy, confirmedBy });
 
   return res.json({
-    status:         'IMPORTED',
+    status:    'IMPORTED',
     productCode,
-    product:        mappedProduct,
-    fieldsImported
+    product:   mappedProduct
   });
 });
 

@@ -264,14 +264,12 @@ class ParserUI {
     const rows = columnsBody.querySelectorAll('tr');
     
     if (hasHeader === 'No') {
-      // Generate auto column names based on column index
-      rows.forEach((row) => {
+      // Generate auto column names based on ROW POSITION (Column0, Column1, ...),
+      // NOT the column index. The index only selects which CSV column to read.
+      rows.forEach((row, position) => {
         const nameInput = row.querySelector('input[type="text"]');
-        const indexInput = row.querySelector('input[type="number"]');
-        
-        if (nameInput && indexInput) {
-          const colIndex = parseInt(indexInput.value) || 0;
-          nameInput.value = `Column${colIndex}`;
+        if (nameInput) {
+          nameInput.value = `Column${position}`;
           nameInput.disabled = true;  // Disable editing when auto-generated
         }
       });
@@ -365,11 +363,14 @@ class ParserUI {
     if (!statusDiv) return;
 
     let displayStatus = status;
+    let cssClass = status.toLowerCase();
     if (status === 'NOT_TESTED') displayStatus = 'NOT TESTED';
     else if (status === 'TESTING') displayStatus = 'TESTING...';
+    else if (status === 'SAVED') cssClass = 'valid';
+    else if (status === 'SAVE ERROR') { displayStatus = 'SAVE ERROR'; cssClass = 'failed'; }
 
     statusDiv.textContent = `STATUS: ${displayStatus}`;
-    statusDiv.className = `parser-status ${status.toLowerCase()}`;
+    statusDiv.className = `parser-status ${cssClass}`;
   }
 
   /**
@@ -431,7 +432,9 @@ class ParserUI {
       const tr = document.createElement('tr');
       userColumns.forEach(col => {
         const td = document.createElement('td');
-        td.textContent = row[col.name] || '';
+        // Read by the configured column index (matches production rowToObject),
+        // so the preview honors the user's Column Index — not the original order.
+        td.textContent = row[col.index] ?? '';
         tr.appendChild(td);
       });
       tbody.appendChild(tr);
@@ -471,22 +474,19 @@ class ParserUI {
       
       if (result.success) {
         console.log('[ParserUI] Parser configuration saved successfully');
-        alert('Parser configuration saved successfully');
+        this.updateStatusDisplay('SAVED');
 
         // Auto-populate Mapping tab from the newly saved parser columns
         if (window.MappingUI) {
           await MappingUI.loadFromParser();
         }
-
-        // Also save to localStorage for offline access (optional)
-        localStorage.setItem('menuCsvInt.parserConfig', JSON.stringify(config));
       } else {
         console.error('[ParserUI] Error saving configuration:', result.error);
-        alert('Error saving configuration: ' + result.error);
+        this.updateStatusDisplay('SAVE ERROR');
       }
     } catch (error) {
       console.error('[ParserUI] Error saving configuration:', error);
-      alert('Error saving configuration: ' + error.message);
+      this.updateStatusDisplay('SAVE ERROR');
     }
   }
 
@@ -687,7 +687,9 @@ class ParserUI {
       }
 
       if (hasHeaderSelect) {
-        hasHeaderSelect.value = parserConfig.hasHeader ? 'Yes' : 'No';
+        // hasHeader is saved as the string "Yes"/"No" — compare explicitly,
+        // because any non-empty string (incl. "No") is truthy.
+        hasHeaderSelect.value = parserConfig.hasHeader === 'No' ? 'No' : 'Yes';
       }
 
       if (quoteCharInput) {

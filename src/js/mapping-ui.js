@@ -70,7 +70,6 @@ class MappingUI {
     parserColumns.forEach(col => {
       const saved   = savedMap[col.name];
       const jsonTag = saved ? saved.jsonTag : col.name;
-      const include = saved !== undefined ? saved.include : true;
 
       const row = document.createElement('tr');
       row.dataset.csvColumn = col.name;
@@ -86,9 +85,6 @@ class MappingUI {
             placeholder="json_tag_name"
             spellcheck="false"
           >
-        </td>
-        <td class="mapping-include-cell">
-          <input type="checkbox" class="mapping-include-chk" ${include ? 'checked' : ''}>
         </td>
       `;
 
@@ -133,16 +129,16 @@ class MappingUI {
       rows.forEach(row => {
         const csvColumn = row.dataset.csvColumn;
         const index     = parseInt(row.dataset.index, 10);
-        const tagInput = row.querySelector('.mapping-tag-input');
-        const include  = row.querySelector('.mapping-include-chk')?.checked ?? true;
+        const tagInput  = row.querySelector('.mapping-tag-input');
         const jsonTag   = tagInput?.value?.trim() || '';
 
-        if (include && !jsonTag) {
+        if (!jsonTag) {
           hasError = true;
-          tagInput.classList.add('mapping-tag-error');
+          tagInput?.classList.add('mapping-tag-error');
         } else {
           tagInput?.classList.remove('mapping-tag-error');
-          mapping.push({ csvColumn, index, jsonTag: jsonTag || csvColumn, include });
+          // include kept always true: every Parser column is exposed
+          mapping.push({ csvColumn, index, jsonTag, include: true });
         }
       });
 
@@ -189,7 +185,7 @@ class MappingUI {
     if (tbody) {
       tbody.innerHTML = `
         <tr>
-          <td colspan="3" class="mapping-placeholder">${MappingUI._esc(message)}</td>
+          <td colspan="2" class="mapping-placeholder">${MappingUI._esc(message)}</td>
         </tr>
       `;
     }

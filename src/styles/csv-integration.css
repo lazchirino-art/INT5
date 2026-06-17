@@ -1187,8 +1187,30 @@ button:focus-visible,
     opacity: 0.85;
 }
 
+/* Auto-size the validation table so columns cluster left and the
+   Required checkbox sits next to the JSON Tag instead of far right. */
+#validationTable {
+    width: auto;
+    min-width: 480px;
+}
+#validationTable th:last-child,
+#validationTable td:last-child {
+    width: 110px;
+}
+
 .validation-required-cell {
     text-align: center;
+}
+
+/* Sync log: operator columns + per-field values */
+.sync-log-user {
+    font-size: 12px;
+    color: var(--text);
+    opacity: 0.85;
+}
+.sync-log-fields div {
+    font-size: 12px;
+    line-height: 1.4;
 }
 
 .validation-required-chk {

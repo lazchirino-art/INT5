@@ -26,6 +26,13 @@ class PersistenceUI {
       saveBtn.addEventListener('click', () => PersistenceUI.saveConfig());
     }
 
+    // Show/hide the validation-level selector depending on trigger mode
+    const triggerMode = document.getElementById('triggerMode');
+    if (triggerMode) {
+      triggerMode.addEventListener('change', () => PersistenceUI.toggleValidationLevel());
+    }
+    PersistenceUI.toggleValidationLevel();
+
     console.log('[PersistenceUI] Initialized');
   }
 
@@ -47,10 +54,13 @@ class PersistenceUI {
       const response = await fetch('/api/config/load');
       const data     = await response.json();
 
-      if (data.status === 'SUCCESS' && data.config?.persistence) {
+      if (data.status === 'SUCCESS' && data.config?.persistence?.triggerMode) {
         const p           = data.config.persistence;
         const triggerMode = document.getElementById('triggerMode');
-        if (triggerMode) triggerMode.value = p.triggerMode || 'auto';
+        if (triggerMode) triggerMode.value = p.triggerMode;
+        const validationLevel = document.getElementById('validationLevel');
+        if (validationLevel) validationLevel.value = p.validationLevel || 'superior';
+        PersistenceUI.toggleValidationLevel();
         PersistenceUI._setStatus('SAVED', 'saved');
       }
     } catch (err) {
@@ -71,11 +81,18 @@ class PersistenceUI {
       if (saveBtn) saveBtn.disabled = true;
 
       const triggerMode = document.getElementById('triggerMode')?.value || 'auto';
+      const persistence = { triggerMode };
+
+      // Validation level only applies in manual mode
+      if (triggerMode === 'manual') {
+        persistence.validationLevel =
+          document.getElementById('validationLevel')?.value || 'superior';
+      }
 
       const response = await fetch('/api/config/save', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ persistence: { triggerMode } })
+        body:    JSON.stringify({ persistence })
       });
 
       const data = await response.json();
@@ -96,6 +113,15 @@ class PersistenceUI {
     }
   }
 
+  /**
+   * Show the "validation level" selector only when trigger mode is manual.
+   */
+  static toggleValidationLevel() {
+    const triggerMode = document.getElementById('triggerMode')?.value;
+    const group = document.getElementById('validationLevelGroup');
+    if (group) group.style.display = triggerMode === 'manual' ? '' : 'none';
+  }
+
   // ==================== SYNC LOG ====================
 
   /**
@@ -111,7 +137,7 @@ class PersistenceUI {
     if (tbody) {
       tbody.innerHTML = `
         <tr>
-          <td colspan="5" style="text-align:center; color:var(--muted); padding:20px;">
+          <td colspan="7" style="text-align:center; color:var(--muted); padding:20px;">
             Loading…
           </td>
         </tr>
@@ -130,7 +156,7 @@ class PersistenceUI {
         if (!data.entries || data.entries.length === 0) {
           tbody.innerHTML = `
             <tr>
-              <td colspan="5" class="sync-log-empty">No log entries yet.</td>
+              <td colspan="7" class="sync-log-empty">No log entries yet.</td>
             </tr>
           `;
         } else {
@@ -141,9 +167,9 @@ class PersistenceUI {
               <td class="sync-log-result sync-log-result--${e.result === 'FOUND' ? 'found' : 'notfound'}">
                 ${PersistenceUI._esc(e.result || '')}
               </td>
-              <td class="sync-log-fields">
-                ${e.fieldsImported !== undefined ? PersistenceUI._esc(String(e.fieldsImported)) : '—'}
-              </td>
+              <td class="sync-log-user">${PersistenceUI._esc(e.requestedBy || '—')}</td>
+              <td class="sync-log-user">${PersistenceUI._esc(e.confirmedBy || '—')}</td>
+              <td class="sync-log-fields">${PersistenceUI._formatFields(e.fields)}</td>
               <td class="sync-log-error">${PersistenceUI._esc(e.error || '')}</td>
             </tr>
           `).join('');
@@ -159,7 +185,7 @@ class PersistenceUI {
       if (tbody) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="5" style="text-align:center; color:#fca5a5; padding:20px;">
+            <td colspan="7" style="text-align:center; color:#fca5a5; padding:20px;">
               Error loading log: ${PersistenceUI._esc(err.message)}
             </td>
           </tr>
@@ -189,6 +215,16 @@ class PersistenceUI {
     if (!el) return;
     el.textContent = `PERSISTENCE: ${text}`;
     el.className   = `persistence-status persistence-status--${state}`;
+  }
+
+  /** Render the imported product fields object as "key: value" lines */
+  static _formatFields(fields) {
+    if (!fields || typeof fields !== 'object') return '—';
+    const entries = Object.entries(fields);
+    if (entries.length === 0) return '—';
+    return entries
+      .map(([k, v]) => `<div><strong>${PersistenceUI._esc(k)}</strong>: ${PersistenceUI._esc(String(v ?? ''))}</div>`)
+      .join('');
   }
 
   /** Minimal HTML escaping for values rendered into innerHTML */

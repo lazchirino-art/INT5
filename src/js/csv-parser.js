@@ -142,15 +142,11 @@ class CSVParser {
         }
       }
 
-      // 12. Generate preview
-      const preview = dataRows.slice(0, 10).map(row => {
-        const parsed = this.parseCSVLine(row, delimiter, quoteChar, escapeChar);
-        const obj = {};
-        columnNames.forEach((col, idx) => {
-          obj[col] = parsed[idx] || '';
-        });
-        return obj;
-      });
+      // 12. Generate preview — positional arrays so the UI can read each value
+      // by the user's configured Column Index (mirrors production rowToObject).
+      const preview = dataRows.slice(0, 10).map(row =>
+        this.parseCSVLine(row, delimiter, quoteChar, escapeChar)
+      );
 
       // 13. Build final result
       const status = errors.length > 0 ? 'FAILED' : 'VALID';

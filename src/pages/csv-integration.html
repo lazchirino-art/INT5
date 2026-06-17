@@ -238,8 +238,7 @@
         <h2>Field Mapping</h2>
         <p class="mapping-description">
             Assign a JSON tag name to each CSV column. The API response will use
-            these tag names. Uncheck <strong>Include</strong> to exclude a field
-            from the response entirely.
+            these tag names. All columns configured in the Parser are included.
         </p>
 
         <div class="mapping-actions">
@@ -252,12 +251,11 @@
                 <tr>
                     <th>CSV Column</th>
                     <th>JSON Tag (Output)</th>
-                    <th>Include</th>
                 </tr>
             </thead>
             <tbody id="mappingBody">
                 <tr>
-                    <td colspan="3" class="mapping-placeholder">
+                    <td colspan="2" class="mapping-placeholder">
                         Save the Parser configuration to populate this table.
                     </td>
                 </tr>
@@ -310,6 +308,13 @@
                     <option value="manual">Manual — Ask operator for confirmation before importing</option>
                 </select>
             </div>
+            <div class="form-group" id="validationLevelGroup">
+                <label>Validation Level (manual)</label>
+                <select id="validationLevel">
+                    <option value="superior">Superior — production shows a higher-level / different user login</option>
+                    <option value="same">Same level — production shows a "verified by the same operator" button</option>
+                </select>
+            </div>
             <div class="persistence-actions">
                 <button type="button" id="savePersistenceBtn" class="save-config-button">Save Persistence Config</button>
                 <span id="persistenceStatus" class="persistence-status persistence-status--idle">PERSISTENCE: NOT SAVED</span>
@@ -327,13 +332,15 @@
                         <th>Timestamp</th>
                         <th>Product Code</th>
                         <th>Result</th>
-                        <th>Fields Imported</th>
+                        <th>Requested By</th>
+                        <th>Confirmed By</th>
+                        <th>Fields</th>
                         <th>Error</th>
                     </tr>
                 </thead>
                 <tbody id="syncLogBody">
                     <tr>
-                        <td colspan="5" class="sync-log-empty">No log entries yet.</td>
+                        <td colspan="7" class="sync-log-empty">No log entries yet.</td>
                     </tr>
                 </tbody>
             </table>
