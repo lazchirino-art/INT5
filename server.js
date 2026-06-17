@@ -224,7 +224,10 @@ async function loadProductionContext() {
       });
     });
   } catch (e) {
-    const err = new Error(`No se pudo leer el archivo tras ${SMB_MAX_ATTEMPTS} intentos: ${e.message}`);
+    // Los mensajes del handler SMB traen <br> (pensados para el log HTML del
+    // wizard). En la API los devolvemos como texto plano.
+    const clean = String(e.message || '').replace(/<br\s*\/?>/gi, ' ').replace(/[ \t]+/g, ' ').trim();
+    const err = new Error(`No se pudo leer el archivo tras ${SMB_MAX_ATTEMPTS} intentos: ${clean}`);
     err.statusCode = 400;
     throw err;
   }
