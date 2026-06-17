@@ -26,12 +26,13 @@ Guarda una sección de la configuración. Cada tab guarda únicamente su secció
 ```json
 {
   "mapping": [
-    { "csvColumn": "MedCode",   "index": 0, "jsonTag": "code",   "include": true },
-    { "csvColumn": "MedName",   "index": 1, "jsonTag": "name",   "include": true },
-    { "csvColumn": "InternalId","index": 2, "jsonTag": "id",     "include": false }
+    { "csvColumn": "MedCode", "index": 0, "jsonTag": "code", "include": true },
+    { "csvColumn": "MedName", "index": 1, "jsonTag": "name", "include": true }
   ]
 }
 ```
+
+> En el flujo **CSV** todas las columnas configuradas en el Parser se exponen (el campo `include` se guarda siempre `true`; ya no hay checkbox de Include en la pestaña Mapping del wizard CSV). En el wizard **API-RESP** sí existe Include, porque el esquema se auto-detecta y hay que elegir entre todos los campos.
 
 **Respuesta:**
 ```json
@@ -56,10 +57,13 @@ Devuelve la configuración completa guardada.
     "parser":      { ... },
     "mapping":     [ ... ],
     "validation":  [ ... ],
-    "persistence": { "triggerMode": "auto" }
+    "persistence": { "triggerMode": "manual", "validationLevel": "superior" },
+    "apiResp":     { ... }
   }
 }
 ```
+
+> `persistence.validationLevel` (`"superior"` | `"same"`) solo aplica cuando `triggerMode` es `"manual"`. La sección `apiResp` contiene la configuración del wizard API-RESP (connector, schema, mapping, validation, persistence).
 
 **Respuesta (sin configuración):**
 ```json
@@ -163,7 +167,9 @@ Lee el contenido de un archivo CSV desde la ruta SMB. Usado internamente por el 
 {
   "productCode":       "ASP001",
   "searchColumnIndex": 0,
-  "confirmed":         false
+  "confirmed":         false,
+  "requestedBy":       "operador.juan",
+  "confirmedBy":       "supervisor.ana"
 }
 ```
 
@@ -172,17 +178,20 @@ Lee el contenido de un archivo CSV desde la ruta SMB. Usado internamente por el 
 | `productCode` | Sí | Código del producto a buscar |
 | `searchColumnIndex` | Sí | Índice de la columna donde buscar (0-based) |
 | `confirmed` | No | `true` para confirmar en modo Manual (default: `false`) |
+| `requestedBy` | No | Operador (login del software de producción) que dispara la petición. Se registra en el log. Default: `"unknown"` |
+| `confirmedBy` | No | Operador/supervisor que valida (modo Manual, en la llamada con `confirmed: true`). Se registra en el log |
+
+> **Contrato con la app de producción:** INT5 no gestiona usuarios. La app de producción (que tiene el login del operador) **debe enviar** `requestedBy` (y `confirmedBy` al confirmar) en cada llamada. INT5 solo los registra en el log.
 
 **Respuestas:**
 
 **IMPORTED** — encontrado, validado e importado:
 ```json
 {
-  "status":         "IMPORTED",
-  "productCode":    "ASP001",
-  "product":        { "code": "ASP001", "name": "Aspirina 100mg", "dose": "100mg" },
-  "fieldsImported": 3,
-  "rowIndex":       42
+  "status":      "IMPORTED",
+  "productCode": "ASP001",
+  "product":     { "code": "ASP001", "name": "Aspirina 100mg", "dose": "100mg" },
+  "rowIndex":    42
 }
 ```
 
@@ -206,13 +215,20 @@ Lee el contenido de un archivo CSV desde la ruta SMB. Usado internamente por el 
 **CONFIRMATION_REQUIRED** — modo Manual, esperando confirmación:
 ```json
 {
-  "status":      "CONFIRMATION_REQUIRED",
-  "productCode": "ASP001",
-  "message":     "Product \"ASP001\" found. Confirm import?",
-  "preview":     { "code": "ASP001", "name": "Aspirina 100mg", "dose": "100mg" }
+  "status":          "CONFIRMATION_REQUIRED",
+  "productCode":     "ASP001",
+  "message":         "Product \"ASP001\" found. Confirm import?",
+  "validationLevel": "superior",
+  "preview":         { "code": "ASP001", "name": "Aspirina 100mg", "dose": "100mg" }
 }
 ```
-→ Para confirmar, reenviar con `"confirmed": true`.
+→ Para confirmar, reenviar con `"confirmed": true` (y `confirmedBy`).
+
+El campo **`validationLevel`** (`"superior"` | `"same"`) indica a la app de producción qué mostrar al validar:
+- `"superior"` → pedir login de un usuario/supervisor de nivel superior.
+- `"same"` → solo un botón "verificado por el mismo operador".
+
+Se configura en la pestaña Persistence (solo aplica en modo Manual).
 
 **ERROR** — fallo de configuración o conexión:
 ```json
@@ -221,6 +237,15 @@ Lee el contenido de un archivo CSV desde la ruta SMB. Usado internamente por el 
   "error":  "Parser not configured: no columns defined. Complete the Parser tab first."
 }
 ```
+
+---
+
+### `POST /api/product/import-api`
+
+Equivalente a `/api/product/import` pero para la integración **API-RESP** (consume un endpoint REST externo en vez de leer un CSV). Mismo contrato de request/response (`requestedBy`, `confirmedBy`, `confirmed`, `validationLevel`, estados `IMPORTED` / `NOT_FOUND` / `VALIDATION_FAILED` / `CONFIRMATION_REQUIRED` / `ERROR`). No requiere `searchColumnIndex` (el producto se pide por `productCode` directamente a la API externa). Las entradas que genera en el sync log llevan `source: "apiResp"`.
+
+Endpoints auxiliares del wizard API-RESP:
+- `POST /api/apiResp/test-connection` — prueba el endpoint externo y detecta los campos del JSON.
 
 ---
 
@@ -244,20 +269,24 @@ Devuelve el historial de todas las llamadas a `/api/product/import`, ordenado de
 {
   "entries": [
     {
-      "id":             "1717430412345-823401",
-      "timestamp":      "2026-06-03T14:22:05.123Z",
-      "productCode":    "ASP001",
-      "result":         "FOUND",
-      "fieldsImported": 3,
-      "error":          ""
+      "id":          "1717430412345-823401",
+      "timestamp":   "2026-06-03T14:22:05.123Z",
+      "productCode": "ASP001",
+      "result":      "FOUND",
+      "requestedBy": "operador.juan",
+      "confirmedBy": "supervisor.ana",
+      "fields":      { "code": "ASP001", "name": "Aspirina 100mg", "dose": "100mg" },
+      "error":       ""
     },
     {
-      "id":             "1717430300000-100001",
-      "timestamp":      "2026-06-03T14:20:00.000Z",
-      "productCode":    "IBU999",
-      "result":         "NOT_FOUND",
-      "fieldsImported": 0,
-      "error":          ""
+      "id":          "1717430300000-100001",
+      "timestamp":   "2026-06-03T14:20:00.000Z",
+      "productCode": "IBU999",
+      "result":      "NOT_FOUND",
+      "requestedBy": "operador.juan",
+      "confirmedBy": null,
+      "fields":      null,
+      "error":       ""
     }
   ],
   "total":      42,
@@ -265,6 +294,8 @@ Devuelve el historial de todas las llamadas a `/api/product/import`, ordenado de
   "totalPages": 5
 }
 ```
+
+> **Nota:** el log guarda los **valores de cada columna configurada** del producto en `fields` (no un contador). `fields` es `null` cuando no hay producto (NOT_FOUND/ERROR) y parcial en VALIDATION_FAILED. También registra el operador (`requestedBy` / `confirmedBy`).
 
 **Valores posibles de `result`:**
 
