@@ -1,5 +1,7 @@
 # Backend SMB — Documentación Técnica
 
+> 📌 **Estado (2026-06-18):** documento de referencia. La fuente de verdad actualizada es **[INT5-DOCUMENTACION-TECNICA.md](INT5-DOCUMENTACION-TECNICA.md)**, con **[API-ENDPOINT.md](API-ENDPOINT.md)** (contrato) y **[DESPLIEGUE-KIOSCO.md](DESPLIEGUE-KIOSCO.md)** (despliegue). Novedades recientes: domain incluido también en Test Connection; mensaje claro "la carpeta requiere credenciales" cuando auth está desmarcado; modelo de seguridad por identidad del proceso explicado en la guía de despliegue.
+
 ## Descripción General
 
 INT5 accede a archivos CSV en rutas de red compartidas (SMB/CIFS) usando **PowerShell** como intermediario, no la librería `smb2` directamente. Esto permite compatibilidad total con Windows sin dependencias nativas problemáticas.

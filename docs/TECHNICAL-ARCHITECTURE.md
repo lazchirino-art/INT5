@@ -1,5 +1,7 @@
 # INT5 - Arquitectura Técnica Detallada
 
+> 📌 **Estado (2026-06-18):** documento de referencia. La fuente de verdad actualizada es **[INT5-DOCUMENTACION-TECNICA.md](INT5-DOCUMENTACION-TECNICA.md)**, con **[API-ENDPOINT.md](API-ENDPOINT.md)** (contrato) y **[DESPLIEGUE-KIOSCO.md](DESPLIEGUE-KIOSCO.md)** (despliegue). Novedades recientes en arquitectura: despliegue en kiosco (INT5 + app de producción en el mismo equipo); INT5 corre oculto como proceso bajo el usuario del kiosco; identidad de proceso y seguridad SMB; integración API-RESP además de CSV; log con operador y valores.
+
 ## 📋 Tabla de Contenidos
 
 1. [Descripción General](#descripción-general)

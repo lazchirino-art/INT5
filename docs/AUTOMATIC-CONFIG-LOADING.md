@@ -1,5 +1,7 @@
 # INT5 - Automatic Configuration Loading
 
+> 📌 **Estado (2026-06-18):** documento de referencia. La fuente de verdad actualizada es **[INT5-DOCUMENTACION-TECNICA.md](INT5-DOCUMENTACION-TECNICA.md)**, con **[API-ENDPOINT.md](API-ENDPOINT.md)** (contrato) y **[DESPLIEGUE-KIOSCO.md](DESPLIEGUE-KIOSCO.md)** (despliegue). Novedades recientes: el log guarda los valores de las columnas y el operador (`requestedBy`/`confirmedBy`); nivel de validación manual (`validationLevel`); el checkbox *Include* solo existe en API-RESP (no en CSV); despliegue en kiosco con arranque automático.
+
 ## 📋 Tabla de Contenidos
 
 1. [Concepto](#concepto)

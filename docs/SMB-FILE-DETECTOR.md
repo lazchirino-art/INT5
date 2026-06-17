@@ -1,5 +1,7 @@
 # SMB File Detector — Documentación Técnica
 
+> 📌 **Estado (2026-06-18):** documento de referencia. La fuente de verdad actualizada es **[INT5-DOCUMENTACION-TECNICA.md](INT5-DOCUMENTACION-TECNICA.md)**, con **[API-ENDPOINT.md](API-ENDPOINT.md)** (contrato) y **[DESPLIEGUE-KIOSCO.md](DESPLIEGUE-KIOSCO.md)** (despliegue). Novedad reciente: las entradas de tipo carpeta (`<DIR>`, incluyendo `.`/`..`) ya no se cuentan como archivos en la detección.
+
 ## Descripción General
 
 El acceso SMB en INT5 se implementa en **`backend/network-path-handler-windows.js`** mediante la clase `NetworkPathHandlerWindows`. Usa **PowerShell** como capa de transporte para acceder a rutas de red, en lugar de la librería `smb2` directamente.

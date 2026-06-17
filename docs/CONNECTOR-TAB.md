@@ -1,5 +1,7 @@
 # Connector Tab - Documentación Completa
 
+> 📌 **Estado (2026-06-18):** documento de referencia. La fuente de verdad actualizada es **[INT5-DOCUMENTACION-TECNICA.md](INT5-DOCUMENTACION-TECNICA.md)**, con **[API-ENDPOINT.md](API-ENDPOINT.md)** (contrato) y **[DESPLIEGUE-KIOSCO.md](DESPLIEGUE-KIOSCO.md)** (despliegue). Novedades recientes: con auth desmarcado, el acceso usa la identidad de Windows del proceso (no anónimo) y un recurso protegido devuelve "la carpeta requiere credenciales"; domain ahora se aplica igual en Test Connection y en la lectura real.
+
 ## 📋 Descripción General
 
 La pestaña **Connector** es el primer paso en la configuración del CSV Parser. Su propósito es establecer y validar la conexión a una fuente de datos (ruta SMB o servidor SFTP) y detectar el archivo CSV que será procesado.

@@ -1,5 +1,7 @@
 # INT5 - Parser Configuration Persistence
 
+> 📌 **Estado (2026-06-18):** documento de referencia. La fuente de verdad actualizada es **[INT5-DOCUMENTACION-TECNICA.md](INT5-DOCUMENTACION-TECNICA.md)**, con **[API-ENDPOINT.md](API-ENDPOINT.md)** (contrato) y **[DESPLIEGUE-KIOSCO.md](DESPLIEGUE-KIOSCO.md)** (despliegue). Novedades recientes: el desplegable Has Header ahora restaura correctamente "No" al cargar; los nombres auto de columna son consecutivos por posición (Column0, Column1…) y el índice solo selecciona la columna del archivo; el preview respeta el Column Index; el Save del Parser actualiza la etiqueta de estado.
+
 ## 📋 Tabla de Contenidos
 
 1. [Problema Identificado](#problema-identificado)

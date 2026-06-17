@@ -1,5 +1,7 @@
 # INT5 - Production Endpoints Implementation Guide
 
+> 📌 **Estado (2026-06-18):** documento de referencia. La fuente de verdad actualizada del contrato es **[API-ENDPOINT.md](API-ENDPOINT.md)** y **[INT5-DOCUMENTACION-TECNICA.md](INT5-DOCUMENTACION-TECNICA.md)**. Cambios recientes en el contrato: `/api/product/import` (e `import-api`) aceptan `requestedBy`/`confirmedBy`; el log guarda los valores de las columnas (no un contador); `CONFIRMATION_REQUIRED` incluye `validationLevel` (`superior`/`same`); ver también despliegue en **[DESPLIEGUE-KIOSCO.md](DESPLIEGUE-KIOSCO.md)**.
+
 ## 📋 Tabla de Contenidos
 
 1. [Resumen de Cambios](#resumen-de-cambios)

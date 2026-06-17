@@ -1,5 +1,7 @@
 # INT5 - Comandos para Testing y Debugging
 
+> 📌 **Estado (2026-06-18):** documento de referencia. La fuente de verdad actualizada es **[INT5-DOCUMENTACION-TECNICA.md](INT5-DOCUMENTACION-TECNICA.md)**, con **[API-ENDPOINT.md](API-ENDPOINT.md)** (contrato) y **[DESPLIEGUE-KIOSCO.md](DESPLIEGUE-KIOSCO.md)** (despliegue). Para reproducir el entorno de seguridad del kiosco en desarrollo, ejecutar el servidor con `runas /user:int5svc` (ver guía de despliegue).
+
 ## 📋 Tabla de Contenidos
 
 1. [Comandos Git](#comandos-git)

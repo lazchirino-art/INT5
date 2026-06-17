@@ -1,5 +1,7 @@
 # Guía de Desarrollo - POC Aplicación Embebida
 
+> 📌 **Estado (2026-06-18):** documento de referencia. La fuente de verdad actualizada es **[INT5-DOCUMENTACION-TECNICA.md](INT5-DOCUMENTACION-TECNICA.md)**, con **[API-ENDPOINT.md](API-ENDPOINT.md)** (contrato) y **[DESPLIEGUE-KIOSCO.md](DESPLIEGUE-KIOSCO.md)** (despliegue). Para probar el comportamiento de seguridad en desarrollo se ejecuta el servidor bajo la cuenta restringida `int5svc` (ver guía de despliegue); en el kiosco no se usa.
+
 ## Introducción
 
 Este documento proporciona una guía completa para desarrollar y mantener la aplicación embebida.

@@ -1,5 +1,7 @@
 # INT5 - Column Filtering in Production
 
+> 📌 **Estado (2026-06-18):** documento de referencia. La fuente de verdad actualizada es **[INT5-DOCUMENTACION-TECNICA.md](INT5-DOCUMENTACION-TECNICA.md)**, con **[API-ENDPOINT.md](API-ENDPOINT.md)** (contrato) y **[DESPLIEGUE-KIOSCO.md](DESPLIEGUE-KIOSCO.md)** (despliegue). Novedad importante: en el flujo **CSV** ya no existe el checkbox *Include* (todas las columnas del Parser se exponen); el filtrado de campos por *Include* solo aplica en **API-RESP**.
+
 ## 📋 Tabla de Contenidos
 
 1. [Concepto Fundamental](#concepto-fundamental)

@@ -1,5 +1,7 @@
 # INT5 - Reutilización de Funciones de Lectura y Búsqueda en Entorno Real
 
+> 📌 **Estado (2026-06-18):** documento de referencia. La fuente de verdad actualizada es **[INT5-DOCUMENTACION-TECNICA.md](INT5-DOCUMENTACION-TECNICA.md)**, con **[API-ENDPOINT.md](API-ENDPOINT.md)** (contrato) y **[DESPLIEGUE-KIOSCO.md](DESPLIEGUE-KIOSCO.md)** (despliegue). Novedades recientes: `rowToObject` confirma que producción lee por Column Index; el log de importación guarda los valores de las columnas y el operador.
+
 ## 📋 Tabla de Contenidos
 
 1. [Arquitectura de Dos Fases](#arquitectura-de-dos-fases)
