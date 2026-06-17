@@ -108,3 +108,36 @@ Con INT5 corriendo bajo `int5svc` (sin permisos sobre el recurso del cliente):
 5. INT5 no gestiona usuarios ni el arranque del kiosco — eso es responsabilidad de la app/instalación de producción.
 
 Detalle de endpoints: **[API-ENDPOINT.md](API-ENDPOINT.md)**.
+
+---
+
+## 6. Cómo embeber la vista de INT5 en la app de producción
+
+La app de producción **no integra el código** de INT5: solo **carga sus vistas por URL** (INT5 las sirve por HTTP en `localhost:3000`). El botón "Integración" apunta a esa URL.
+
+### URLs disponibles
+| URL | Vista |
+|-----|-------|
+| `http://localhost:3000/` | Menú principal (CSV / API-RESP) |
+| `http://localhost:3000/csv-integration.html` | Wizard CSV directamente |
+| `http://localhost:3000/mock-production.html` | Vista mock de producción (referencia) |
+
+### Según la tecnología de la app de producción
+
+**Web (lo más común) — iframe:**
+```html
+<iframe src="http://localhost:3000/csv-integration.html"
+        style="width:100%;height:100%;border:0;"></iframe>
+```
+
+**Escritorio con WebView embebido:**
+- Electron: `win.loadURL('http://localhost:3000/csv-integration.html')` o un `<webview>`.
+- .NET (WPF/WinForms): control **WebView2** → `webView.Source = new Uri("http://localhost:3000/csv-integration.html")`.
+- JavaFX: `engine.load("http://localhost:3000/csv-integration.html")`.
+
+**Abrir en el navegador del sistema** (menos integrado): el botón abre la URL directamente.
+
+### Requisitos
+- INT5 debe estar **corriendo** en `localhost:3000` (el auto-arranque del kiosco lo garantiza).
+- **Misma máquina** → por eso es `localhost`. (Otra máquina sería `http://IP-del-kiosco:3000`.)
+- **Sin problemas de CORS** al cargar la vista: el iframe/webview navega a `localhost:3000` y los scripts de esa página llaman a `localhost:3000` (mismo origen).

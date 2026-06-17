@@ -1202,17 +1202,6 @@ button:focus-visible,
     text-align: center;
 }
 
-/* Sync log: operator columns + per-field values */
-.sync-log-user {
-    font-size: 12px;
-    color: var(--text);
-    opacity: 0.85;
-}
-.sync-log-fields div {
-    font-size: 12px;
-    line-height: 1.4;
-}
-
 .validation-required-chk {
     width: 16px;
     height: 16px;
@@ -1316,19 +1305,40 @@ button:focus-visible,
     color: var(--text);
 }
 
-.sync-log-ts     { font-size: 12px; color: var(--muted); white-space: nowrap; }
-.sync-log-code   { font-family: monospace; font-size: 13px; font-weight: 600; }
-.sync-log-fields { text-align: center; font-size: 13px; }
-.sync-log-error  { font-size: 12px; color: #fca5a5; max-width: 260px; word-break: break-word; }
-
-.sync-log-result {
-    font-weight: 700;
-    font-size: 12px;
-    letter-spacing: 0.04em;
+/* Sync log table — consistent cell layout (mirrors the mock production view) */
+#syncLogTable th,
+#syncLogTable td {
+    text-align: left;
+    vertical-align: top;
+    padding: 7px 10px;
+    font-size: 12.5px;
 }
+#syncLogTable th {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    font-weight: 600;
+}
+.sync-log-ts     { color: var(--muted); white-space: nowrap; }
+.sync-log-code   { font-family: monospace; font-weight: 600; }
+.sync-log-user   { color: var(--muted); }
+.sync-log-fields { color: var(--muted); line-height: 1.5; }
+.sync-log-fields b { color: var(--text); font-weight: 600; }
+.sync-log-error  { color: #b91c1c; max-width: 240px; word-break: break-word; }
 
-.sync-log-result--found    { color: #064e3b; }
-.sync-log-result--notfound { color: var(--muted); }
+/* Result as a pill, like the mock */
+.sync-log-result {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 9px;
+    border-radius: 20px;
+    white-space: nowrap;
+}
+.sync-log-result--found    { background: rgba(34, 197, 94, 0.16);  color: #064e3b; }
+.sync-log-result--notfound { background: rgba(245, 158, 11, 0.16); color: #92400e; }
+.sync-log-result--failed   { background: rgba(239, 68, 68, 0.16);  color: #991b1b; }
 
 .sync-log-empty {
     text-align: center;

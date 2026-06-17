@@ -160,19 +160,21 @@ class PersistenceUI {
             </tr>
           `;
         } else {
-          tbody.innerHTML = data.entries.map(e => `
+          tbody.innerHTML = data.entries.map(e => {
+            const r = e.result || '';
+            const cls = r === 'FOUND' ? 'found' : r === 'NOT_FOUND' ? 'notfound' : 'failed';
+            const ts = e.timestamp ? new Date(e.timestamp).toLocaleString() : '';
+            return `
             <tr>
-              <td class="sync-log-ts">${PersistenceUI._esc(e.timestamp || '')}</td>
+              <td class="sync-log-ts">${PersistenceUI._esc(ts)}</td>
               <td class="sync-log-code">${PersistenceUI._esc(e.productCode || '')}</td>
-              <td class="sync-log-result sync-log-result--${e.result === 'FOUND' ? 'found' : 'notfound'}">
-                ${PersistenceUI._esc(e.result || '')}
-              </td>
+              <td><span class="sync-log-result sync-log-result--${cls}">${PersistenceUI._esc(r)}</span></td>
               <td class="sync-log-user">${PersistenceUI._esc(e.requestedBy || '—')}</td>
               <td class="sync-log-user">${PersistenceUI._esc(e.confirmedBy || '—')}</td>
               <td class="sync-log-fields">${PersistenceUI._formatFields(e.fields)}</td>
               <td class="sync-log-error">${PersistenceUI._esc(e.error || '')}</td>
-            </tr>
-          `).join('');
+            </tr>`;
+          }).join('');
         }
       }
 
@@ -223,8 +225,8 @@ class PersistenceUI {
     const entries = Object.entries(fields);
     if (entries.length === 0) return '—';
     return entries
-      .map(([k, v]) => `<div><strong>${PersistenceUI._esc(k)}</strong>: ${PersistenceUI._esc(String(v ?? ''))}</div>`)
-      .join('');
+      .map(([k, v]) => `<b>${PersistenceUI._esc(k)}</b>: ${PersistenceUI._esc(String(v ?? ''))}`)
+      .join(', ');
   }
 
   /** Minimal HTML escaping for values rendered into innerHTML */
