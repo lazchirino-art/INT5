@@ -75,8 +75,8 @@
         <button id="goBtn">Buscar</button>
       </div>
       <div class="opts">
-        <label>Columna de búsqueda (índice):</label>
-        <input id="searchIdx" type="number" min="0" value="0">
+        <label>Columna de búsqueda (override opcional):</label>
+        <input id="searchIdx" type="number" min="0" placeholder="config">
         <span id="endpointInfo">→ POST /api/product/import</span>
       </div>
 
@@ -131,11 +131,13 @@ async function importProduct(confirmed=false, confirmedBy=null){
   if(!productCode){ showBanner('warn','⚠️','Introduce un código de producto.'); return; }
   const body = {
     productCode,
-    searchColumnIndex: parseInt($('searchIdx').value,10) || 0,
     requestedBy: $('operator').value.trim() || 'unknown',
     confirmed,
     confirmedBy
   };
+  // La columna de búsqueda está en la config de INT5; solo se envía si se quiere forzar un override.
+  const idxRaw = $('searchIdx').value.trim();
+  if (idxRaw !== '') body.searchColumnIndex = parseInt(idxRaw, 10);
   showBanner('warn','⏳','Consultando…');
   let data;
   try{

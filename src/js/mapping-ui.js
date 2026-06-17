@@ -93,6 +93,20 @@ class MappingUI {
 
     console.log(`[MappingUI] Table populated with ${parserColumns.length} rows`);
 
+    // Populate the "search column" selector with the parser columns
+    const searchSelect = document.getElementById('mappingSearchColumn');
+    if (searchSelect) {
+      const savedIdx = appConfig.searchColumnIndex;
+      searchSelect.innerHTML =
+        '<option value="">— select the column production will search by —</option>' +
+        parserColumns.map(c =>
+          `<option value="${c.index}">${MappingUI._esc(c.name)} (índice ${c.index})</option>`
+        ).join('');
+      if (savedIdx !== undefined && savedIdx !== null) {
+        searchSelect.value = String(savedIdx);
+      }
+    }
+
     // Restore status badge based on whether mapping was already saved
     if (appConfig.mapping && appConfig.mapping.length > 0) {
       MappingUI._setStatus('SAVED', 'saved');
@@ -147,10 +161,19 @@ class MappingUI {
         return;
       }
 
+      // Search column (which CSV column holds the product code production sends)
+      const searchSelect = document.getElementById('mappingSearchColumn');
+      const searchVal = searchSelect?.value ?? '';
+      if (searchVal === '') {
+        MappingUI._setStatus('PICK SEARCH COLUMN', 'error');
+        return;
+      }
+      const searchColumnIndex = parseInt(searchVal, 10);
+
       const response = await fetch('/api/config/save', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ mapping })
+        body:    JSON.stringify({ mapping, searchColumnIndex })
       });
 
       const data = await response.json();

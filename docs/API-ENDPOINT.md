@@ -165,18 +165,19 @@ Lee el contenido de un archivo CSV desde la ruta SMB. Usado internamente por el 
 **Request:**
 ```json
 {
-  "productCode":       "ASP001",
-  "searchColumnIndex": 0,
-  "confirmed":         false,
-  "requestedBy":       "operador.juan",
-  "confirmedBy":       "supervisor.ana"
+  "productCode":  "ASP001",
+  "requestedBy":  "operador.juan",
+  "confirmedBy":  "supervisor.ana",
+  "confirmed":    false
 }
 ```
+
+> La **columna de búsqueda** se configura una vez en la pestaña Mapping y se guarda en `config.searchColumnIndex` (cada cliente puede tenerla en una columna distinta). Por eso producción **solo envía `productCode`**. Si se quiere forzar otra columna en una llamada concreta, se puede enviar `searchColumnIndex` como override.
 
 | Campo | Requerido | Descripción |
 |-------|-----------|-------------|
 | `productCode` | Sí | Código del producto a buscar |
-| `searchColumnIndex` | Sí | Índice de la columna donde buscar (0-based) |
+| `searchColumnIndex` | No | Índice de la columna donde buscar (0-based). **Override opcional**: si no se envía, se usa el configurado en la pestaña Mapping (`config.searchColumnIndex`). Producción normalmente envía solo `productCode`. |
 | `confirmed` | No | `true` para confirmar en modo Manual (default: `false`) |
 | `requestedBy` | No | Operador (login del software de producción) que dispara la petición. Se registra en el log. Default: `"unknown"` |
 | `confirmedBy` | No | Operador/supervisor que valida (modo Manual, en la llamada con `confirmed: true`). Se registra en el log |

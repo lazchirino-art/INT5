@@ -244,6 +244,8 @@ app.post('/api/config/save', (req, res) => {
       mapping:     newConfig.mapping     || existingConfig.mapping     || [],
       validation:  newConfig.validation  || existingConfig.validation  || [],
       persistence: newConfig.persistence || existingConfig.persistence || {},
+      // Column (by index) that holds the product code production searches by.
+      searchColumnIndex: newConfig.searchColumnIndex ?? existingConfig.searchColumnIndex ?? null,
       apiResp:     mergedApiResp
     };
 
@@ -735,8 +737,8 @@ app.post('/api/product/import', async (req, res) => {
   } = req.body || {};
   const timestamp = new Date().toISOString();
 
-  if (!productCode || searchColumnIndex === undefined) {
-    return res.status(400).json({ error: 'Missing required fields: productCode, searchColumnIndex' });
+  if (!productCode) {
+    return res.status(400).json({ error: 'Missing required field: productCode' });
   }
 
   let context;
@@ -748,13 +750,22 @@ app.post('/api/product/import', async (req, res) => {
   }
 
   const { parserConfig, mappingConfig, rows, config } = context;
+
+  // Search column: request value (override) → saved config → error if neither.
+  // Production normally sends only productCode; the column is configured once.
+  const effectiveSearchIndex = (searchColumnIndex ?? config.searchColumnIndex);
+  if (effectiveSearchIndex === undefined || effectiveSearchIndex === null) {
+    const msg = 'Search column not configured. Set it in the Mapping tab (Search Column).';
+    insertSyncLog({ timestamp, productCode, result: 'ERROR', fields: null, error: msg, requestedBy, confirmedBy });
+    return res.status(400).json({ error: msg, status: 'ERROR' });
+  }
   const validationRules = Array.isArray(config.validation) ? config.validation : [];
   const persistence     = config.persistence || {};
   const triggerMode     = persistence.triggerMode || 'auto';
   const validationLevel = persistence.validationLevel || 'superior';
 
   // ── Search CSV ────────────────────────────────────────────────────────
-  const searchResult = csvUtils.searchProductInRows(rows, productCode, searchColumnIndex, parserConfig.columns);
+  const searchResult = csvUtils.searchProductInRows(rows, productCode, effectiveSearchIndex, parserConfig.columns);
 
   if (!searchResult.found || !searchResult.product) {
     insertSyncLog({ timestamp, productCode, result: 'NOT_FOUND', fields: null, error: '', requestedBy, confirmedBy });

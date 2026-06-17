@@ -241,6 +241,14 @@
             these tag names. All columns configured in the Parser are included.
         </p>
 
+        <div class="form-group">
+            <label>Search Column (product code) *</label>
+            <select id="mappingSearchColumn">
+                <option value="">— select the column production will search by —</option>
+            </select>
+            <small>La columna del CSV cuyo valor es el código que enviará producción. Se guarda en la config; producción solo manda el <code>productCode</code>.</small>
+        </div>
+
         <div class="mapping-actions">
             <button type="button" id="saveMappingBtn" class="save-config-button">Save Mapping</button>
             <span id="mappingStatus" class="mapping-status mapping-status--idle">MAPPING: NOT SAVED</span>
