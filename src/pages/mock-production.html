@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>App de Producción (MOCK) — INT5</title>
+<style>
+  :root{
+    --bg:#0f172a; --panel:#1e293b; --panel2:#273449; --text:#e2e8f0; --muted:#94a3b8;
+    --primary:#2d69ff; --primary2:#2445bd; --ok:#16a34a; --okbg:#dcfce7;
+    --warn:#d97706; --warnbg:#fef3c7; --err:#dc2626; --errbg:#fee2e2; --border:#334155;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;font-family:"Segoe UI",Arial,sans-serif;background:var(--bg);color:var(--text);display:flex;flex-direction:column}
+  header{background:var(--panel);border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+  header h1{font-size:18px;margin:0}
+  header .tag{font-size:11px;background:var(--warnbg);color:#92400e;padding:2px 8px;border-radius:20px;font-weight:700;margin-left:8px}
+  .operator{display:flex;align-items:center;gap:8px;font-size:14px}
+  .operator input{background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 10px;font-size:14px}
+  main{flex:1;display:flex;justify-content:center;align-items:flex-start;padding:32px 20px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:28px;width:min(100%,560px);box-shadow:0 12px 40px rgba(0,0,0,.35)}
+  .card h2{margin:0 0 4px;font-size:20px}
+  .card p.sub{margin:0 0 22px;color:var(--muted);font-size:14px}
+  .scan-row{display:flex;gap:10px}
+  .scan-row input{flex:1;font-size:20px;padding:12px 14px;border-radius:10px;border:1px solid var(--border);background:var(--panel2);color:var(--text);letter-spacing:.04em}
+  .scan-row button{border:0;border-radius:10px;padding:0 22px;font-size:15px;font-weight:600;color:#fff;background:linear-gradient(180deg,var(--primary),var(--primary2));cursor:pointer}
+  .scan-row button:active{transform:translateY(1px)}
+  .opts{display:flex;align-items:center;gap:8px;margin-top:12px;color:var(--muted);font-size:13px}
+  .opts input{width:64px;background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px}
+  .result{margin-top:22px;min-height:40px}
+  .banner{border-radius:10px;padding:14px 16px;font-size:14px;display:flex;gap:10px;align-items:flex-start}
+  .banner.ok{background:var(--okbg);color:#065f46}
+  .banner.warn{background:var(--warnbg);color:#92400e}
+  .banner.err{background:var(--errbg);color:#991b1b}
+  .banner .ico{font-size:18px;line-height:1.2}
+  table.prod{width:100%;border-collapse:collapse;margin-top:14px;font-size:14px}
+  table.prod td{padding:8px 10px;border-bottom:1px solid var(--border)}
+  table.prod td.k{color:var(--muted);width:40%}
+  table.prod td.v{font-weight:600}
+  .hint{margin-top:18px;color:var(--muted);font-size:12px;line-height:1.5}
+  /* modal */
+  .overlay{position:fixed;inset:0;background:rgba(2,6,23,.7);display:none;align-items:center;justify-content:center;padding:20px;z-index:50}
+  .overlay.show{display:flex}
+  .modal{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:26px;width:min(100%,440px);box-shadow:0 20px 60px rgba(0,0,0,.5)}
+  .modal h3{margin:0 0 6px;font-size:18px}
+  .modal p.m{margin:0 0 18px;color:var(--muted);font-size:14px}
+  .modal .preview{background:var(--panel2);border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:18px;max-height:160px;overflow:auto}
+  .modal label{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
+  .modal input{width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--panel2);color:var(--text);font-size:15px}
+  .modal .actions{display:flex;gap:10px;margin-top:22px}
+  .modal button{flex:1;border:0;border-radius:10px;padding:12px;font-size:14px;font-weight:600;cursor:pointer}
+  .modal .confirm{color:#fff;background:linear-gradient(180deg,var(--ok),#0f7a37)}
+  .modal .cancel{background:var(--panel2);color:var(--text);border:1px solid var(--border)}
+  .badge-level{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;margin-left:6px}
+  .badge-level.superior{background:#7c3aed;color:#fff}
+  .badge-level.same{background:#0891b2;color:#fff}
+</style>
+</head>
+<body>
+  <header>
+    <div><h1>App de Producción <span class="tag">MOCK</span></h1></div>
+    <div class="operator">
+      <span>👤 Operador:</span>
+      <input id="operator" value="operador.demo" spellcheck="false" title="Simula el login del operador del software">
+    </div>
+  </header>
+
+  <main>
+    <div class="card">
+      <h2>Buscar / Importar producto</h2>
+      <p class="sub">Introduce o escanea el código del producto. Esto llama al endpoint de INT5.</p>
+
+      <div class="scan-row">
+        <input id="code" placeholder="Código de producto (ej. w.csv col 0)" spellcheck="false" autofocus>
+        <button id="goBtn">Buscar</button>
+      </div>
+      <div class="opts">
+        <label>Columna de búsqueda (índice):</label>
+        <input id="searchIdx" type="number" min="0" value="0">
+        <span id="endpointInfo">→ POST /api/product/import</span>
+      </div>
+
+      <div class="result" id="result"></div>
+
+      <p class="hint">
+        Flujo: <b>Auto</b> importa directo. <b>Manual</b> abre un popup de validación —
+        si el nivel es <b>superior</b> pide login de supervisor; si es <b>mismo nivel</b>,
+        basta el botón de verificación del propio operador. La identidad queda en el log
+        (<code>requestedBy</code> / <code>confirmedBy</code>).
+      </p>
+    </div>
+  </main>
+
+  <!-- Modal de confirmación (modo Manual) -->
+  <div class="overlay" id="overlay">
+    <div class="modal">
+      <h3>Confirmar importación <span id="levelBadge" class="badge-level"></span></h3>
+      <p class="m" id="modalMsg"></p>
+      <div class="preview" id="modalPreview"></div>
+
+      <div id="superiorFields" style="display:none">
+        <label>Usuario supervisor</label>
+        <input id="supUser" placeholder="supervisor.xxx" spellcheck="false">
+        <label>Contraseña</label>
+        <input id="supPass" type="password" placeholder="••••••">
+      </div>
+
+      <div class="actions">
+        <button class="cancel" id="cancelBtn">Cancelar</button>
+        <button class="confirm" id="confirmBtn">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+const $ = id => document.getElementById(id);
+let pending = null; // { validationLevel, productCode }
+
+function showBanner(type, ico, html){
+  $('result').innerHTML = `<div class="banner ${type}"><span class="ico">${ico}</span><div>${html}</div></div>`;
+}
+function renderProduct(p){
+  const rows = Object.entries(p || {}).map(([k,v]) =>
+    `<tr><td class="k">${esc(k)}</td><td class="v">${esc(String(v))}</td></tr>`).join('');
+  return `<table class="prod">${rows}</table>`;
+}
+function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+async function importProduct(confirmed=false, confirmedBy=null){
+  const productCode = $('code').value.trim();
+  if(!productCode){ showBanner('warn','⚠️','Introduce un código de producto.'); return; }
+  const body = {
+    productCode,
+    searchColumnIndex: parseInt($('searchIdx').value,10) || 0,
+    requestedBy: $('operator').value.trim() || 'unknown',
+    confirmed,
+    confirmedBy
+  };
+  showBanner('warn','⏳','Consultando…');
+  let data;
+  try{
+    const res = await fetch('/api/product/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    data = await res.json();
+  }catch(e){ showBanner('err','✗',`Error de red: ${esc(e.message)}`); return; }
+  handle(data);
+}
+
+function handle(data){
+  switch(data.status){
+    case 'IMPORTED':
+      showBanner('ok','✓',`<b>Producto importado</b> (${esc(data.productCode)})` + renderProduct(data.product));
+      break;
+    case 'NOT_FOUND':
+      showBanner('warn','🔍',`Producto <b>${esc(data.productCode)}</b> no encontrado en el CSV.`);
+      break;
+    case 'VALIDATION_FAILED':
+      showBanner('err','✗',`Datos incompletos: ${esc(data.message||'campo requerido vacío')}`);
+      break;
+    case 'CONFIRMATION_REQUIRED':
+      openModal(data);
+      break;
+    case 'ERROR':
+    default:
+      showBanner('err','✗',`Error: ${esc(data.error||data.message||'desconocido')}`);
+  }
+}
+
+function openModal(data){
+  pending = { validationLevel: data.validationLevel || 'superior', productCode: data.productCode };
+  const lvl = pending.validationLevel;
+  $('levelBadge').textContent = lvl === 'superior' ? 'NIVEL SUPERIOR' : 'MISMO NIVEL';
+  $('levelBadge').className = 'badge-level ' + (lvl === 'superior' ? 'superior' : 'same');
+  $('modalMsg').textContent = data.message || 'Confirma la importación del producto.';
+  $('modalPreview').innerHTML = renderProduct(data.preview);
+  $('superiorFields').style.display = lvl === 'superior' ? 'block' : 'none';
+  $('confirmBtn').textContent = lvl === 'superior' ? 'Validar e importar' : `Verificado por ${$('operator').value.trim()}`;
+  $('supUser').value=''; $('supPass').value='';
+  $('overlay').classList.add('show');
+}
+function closeModal(){ $('overlay').classList.remove('show'); pending=null; }
+
+$('confirmBtn').addEventListener('click', ()=>{
+  if(!pending) return;
+  let confirmedBy;
+  if(pending.validationLevel === 'superior'){
+    const u = $('supUser').value.trim();
+    if(!u){ $('supUser').focus(); return; }
+    // La validación real de la contraseña la haría la app de producción / su backend.
+    confirmedBy = u;
+  }else{
+    confirmedBy = $('operator').value.trim() || 'unknown';
+  }
+  closeModal();
+  importProduct(true, confirmedBy);
+});
+$('cancelBtn').addEventListener('click', ()=>{ closeModal(); showBanner('warn','⏹️','Importación cancelada por el operador.'); });
+$('goBtn').addEventListener('click', ()=>importProduct());
+$('code').addEventListener('keydown', e=>{ if(e.key==='Enter') importProduct(); });
+</script>
+</body>
+</html>
