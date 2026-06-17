@@ -150,7 +150,19 @@ El contrato completo (request/response de cada endpoint) está en **[API-ENDPOIN
 Cada tab envía solo su sección a `/api/config/save`. El backend la mezcla con la existente (no pisa las demás). Secciones: `connection`, `parser`, `mapping`, `validation`, `persistence`, `apiResp`.
 
 ### `loadProductionContext()`
-Helper compartido por todos los endpoints de producto CSV: valida la config, descifra la contraseña SMB, lee el archivo del recurso y parsea las filas. Lanza error con `statusCode` si algo falta.
+Helper compartido por todos los endpoints de producto CSV: valida la config, descifra la contraseña SMB, **detecta el archivo por patrón en cada llamada** (soporta nombres dinámicos como `data_YYYYMMDD.csv`; no depende de un nombre guardado), lo lee y parsea las filas. Lanza error con `statusCode` si algo falta.
+
+### Reintentos de acceso SMB
+El acceso al archivo (detección + lectura) se reintenta ante fallos **transitorios** de red/conexión:
+
+```
+Intento 1 → falla → espera 10 s → Intento 2 → falla → espera 10 s → Intento 3 → falla → ERROR
+```
+
+- **3 intentos** en total, **10 segundos** entre cada uno (constantes `SMB_MAX_ATTEMPTS` y `SMB_RETRY_DELAY_MS` en `server.js`).
+- Si cualquier intento tiene éxito, continúa de inmediato.
+- **Solo se reintenta el acceso SMB.** El caso "producto no encontrado" (`NOT_FOUND`) se decide en memoria tras leer el archivo correctamente, así que **no** se reintenta y responde al instante.
+- Implicación: si la red está caída, la llamada de importación puede tardar ~20–30 s en devolver el `ERROR` (2 esperas de 10 s + el tiempo de cada intento). La app de producción debe contemplar esa espera.
 
 ### Modos de trigger (Persistence)
 - **Auto** — busca, valida e importa silenciosamente en cada llamada.

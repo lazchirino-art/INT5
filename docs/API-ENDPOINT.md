@@ -239,6 +239,8 @@ Se configura en la pestaña Persistence (solo aplica en modo Manual).
 }
 ```
 
+> **Reintentos:** el acceso al archivo (detección + lectura SMB) se reintenta ante fallos transitorios de red — **3 intentos con 10 s de espera entre cada uno** (intento 1 → 10 s → intento 2 → 10 s → intento 3 → `ERROR`). Solo se reintenta el acceso SMB; `NOT_FOUND` se decide tras leer el archivo y no se reintenta. **Implicación para producción:** si la red está caída, esta llamada puede tardar ~20–30 s en responder `ERROR`; la app de producción debe contemplar esa espera (timeout/feedback de "reintentando").
+
 ---
 
 ### `POST /api/product/import-api`
