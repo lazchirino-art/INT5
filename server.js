@@ -121,6 +121,29 @@ function applyMappingToList(items, mappingConfig) {
  * Returns { config, connectorConfig, parserConfig, mappingConfig, rows }
  * Throws an Error with a .statusCode property on any failure.
  */
+// Reintentos para el acceso SMB (errores transitorios de red/conexión).
+const SMB_MAX_ATTEMPTS   = 3;       // intentos totales
+const SMB_RETRY_DELAY_MS = 10000;   // espera entre intentos (10 s)
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/**
+ * Ejecuta fn con reintentos: intento 1 → (espera) → intento 2 → (espera) → intento 3.
+ * Si todos fallan, lanza el último error.
+ */
+async function withSmbRetries(fn) {
+  let lastErr;
+  for (let attempt = 1; attempt <= SMB_MAX_ATTEMPTS; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+      console.warn(`[SMB] Intento ${attempt}/${SMB_MAX_ATTEMPTS} falló: ${e.message}`);
+      if (attempt < SMB_MAX_ATTEMPTS) await sleep(SMB_RETRY_DELAY_MS);
+    }
+  }
+  throw lastErr;
+}
+
 async function loadProductionContext() {
   if (!existsSync(CONFIG_FILE)) {
     const err = new Error('No saved configuration. Complete the integration setup first.');
@@ -178,29 +201,33 @@ async function loadProductionContext() {
     domain:   connectorConfig.domain   || null
   };
 
-  // Resolve the file to read. Prefer a fixed saved filename; otherwise detect
-  // it by pattern at runtime (handles dynamic names like data_YYYYMMDD.csv and
-  // means production never depends on a stale saved filename).
-  let filename = connectorConfig.filename;
-  if (!filename) {
-    try {
-      const files    = await handler.listFilesViaPS(connectorConfig.path, creds);
-      const matching = handler.applyPattern(files, connectorConfig.fileNamePattern);
-      filename       = handler.selectFile(matching); // throws on 0 or >1 matches
-    } catch (e) {
-      const err = new Error(`No se pudo determinar el archivo: ${e.message}`);
-      err.statusCode = 400;
-      throw err;
-    }
+  // Acceso al archivo con reintentos (3 intentos, 10 s entre cada uno).
+  // Resuelve el archivo por patrón en cada intento (soporta nombres dinámicos
+  // como data_YYYYMMDD.csv) y luego lo lee. Solo se reintenta esta parte SMB:
+  // los errores transitorios de red/conexión. "Producto no encontrado" NO se
+  // reintenta (se decide en memoria, después de leer el archivo).
+  let fileContent;
+  try {
+    fileContent = await withSmbRetries(async () => {
+      let filename = connectorConfig.filename;
+      if (!filename) {
+        const files    = await handler.listFilesViaPS(connectorConfig.path, creds);
+        const matching = handler.applyPattern(files, connectorConfig.fileNamePattern);
+        filename       = handler.selectFile(matching); // lanza si 0 o >1 coincidencias
+      }
+      return await handler.readFile({
+        path:     connectorConfig.path,
+        filename: filename,
+        username: creds.username,
+        password: creds.password,
+        domain:   creds.domain
+      });
+    });
+  } catch (e) {
+    const err = new Error(`No se pudo leer el archivo tras ${SMB_MAX_ATTEMPTS} intentos: ${e.message}`);
+    err.statusCode = 400;
+    throw err;
   }
-
-  const fileContent = await handler.readFile({
-    path:     connectorConfig.path,
-    filename: filename,
-    username: creds.username,
-    password: creds.password,
-    domain:   creds.domain
-  });
 
   if (!fileContent) {
     const err = new Error('Failed to read file from SMB share. Check connector configuration.');
