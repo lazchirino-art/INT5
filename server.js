@@ -146,8 +146,8 @@ async function loadProductionContext() {
     err.statusCode = 400;
     throw err;
   }
-  if (!connectorConfig.filename) {
-    const err = new Error('Connector not configured: no file detected. Run Test Connection first.');
+  if (!connectorConfig.filename && !connectorConfig.fileNamePattern) {
+    const err = new Error('Connector not configured: missing file name or pattern. Complete the Connector tab.');
     err.statusCode = 400;
     throw err;
   }
@@ -172,12 +172,34 @@ async function loadProductionContext() {
   }
 
   const handler = new NetworkPathHandlerWindows(credentialCrypto);
-  const fileContent = await handler.readFile({
-    path:     connectorConfig.path,
-    filename: connectorConfig.filename,
+  const creds = {
     username: connectorConfig.username || null,
     password: password,
     domain:   connectorConfig.domain   || null
+  };
+
+  // Resolve the file to read. Prefer a fixed saved filename; otherwise detect
+  // it by pattern at runtime (handles dynamic names like data_YYYYMMDD.csv and
+  // means production never depends on a stale saved filename).
+  let filename = connectorConfig.filename;
+  if (!filename) {
+    try {
+      const files    = await handler.listFilesViaPS(connectorConfig.path, creds);
+      const matching = handler.applyPattern(files, connectorConfig.fileNamePattern);
+      filename       = handler.selectFile(matching); // throws on 0 or >1 matches
+    } catch (e) {
+      const err = new Error(`No se pudo determinar el archivo: ${e.message}`);
+      err.statusCode = 400;
+      throw err;
+    }
+  }
+
+  const fileContent = await handler.readFile({
+    path:     connectorConfig.path,
+    filename: filename,
+    username: creds.username,
+    password: creds.password,
+    domain:   creds.domain
   });
 
   if (!fileContent) {
