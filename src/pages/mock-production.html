@@ -11,43 +11,60 @@
     --warn:#d97706; --warnbg:#fef3c7; --err:#dc2626; --errbg:#fee2e2; --border:#334155;
   }
   *{box-sizing:border-box}
-  body{margin:0;min-height:100vh;font-family:"Segoe UI",Arial,sans-serif;background:var(--bg);color:var(--text);display:flex;flex-direction:column}
+  body{margin:0;min-height:100vh;font-family:"Segoe UI",Arial,sans-serif;background:var(--bg);color:var(--text)}
   header{background:var(--panel);border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
   header h1{font-size:18px;margin:0}
   header .tag{font-size:11px;background:var(--warnbg);color:#92400e;padding:2px 8px;border-radius:20px;font-weight:700;margin-left:8px}
   .operator{display:flex;align-items:center;gap:8px;font-size:14px}
   .operator input{background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 10px;font-size:14px}
-  main{flex:1;display:flex;justify-content:center;align-items:flex-start;padding:32px 20px}
-  .card{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:28px;width:min(100%,560px);box-shadow:0 12px 40px rgba(0,0,0,.35)}
-  .card h2{margin:0 0 4px;font-size:20px}
-  .card p.sub{margin:0 0 22px;color:var(--muted);font-size:14px}
+  main{max-width:1080px;margin:0 auto;padding:24px 20px;display:flex;flex-direction:column;gap:20px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:24px;box-shadow:0 12px 40px rgba(0,0,0,.3)}
+  .card h2{margin:0 0 4px;font-size:18px}
+  .card p.sub{margin:0 0 16px;color:var(--muted);font-size:13px}
+  .colinfo{font-size:13px;color:var(--muted);margin:0 0 14px}
+  .colinfo b{color:var(--text)}
   .scan-row{display:flex;gap:10px}
   .scan-row input{flex:1;font-size:20px;padding:12px 14px;border-radius:10px;border:1px solid var(--border);background:var(--panel2);color:var(--text);letter-spacing:.04em}
   .scan-row button{border:0;border-radius:10px;padding:0 22px;font-size:15px;font-weight:600;color:#fff;background:linear-gradient(180deg,var(--primary),var(--primary2));cursor:pointer}
   .scan-row button:active{transform:translateY(1px)}
-  .opts{display:flex;align-items:center;gap:8px;margin-top:12px;color:var(--muted);font-size:13px}
-  .opts input{width:64px;background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px}
-  .result{margin-top:22px;min-height:40px}
-  .banner{border-radius:10px;padding:14px 16px;font-size:14px;display:flex;gap:10px;align-items:flex-start}
+  .opts{display:flex;align-items:center;gap:8px;margin-top:12px;color:var(--muted);font-size:13px;flex-wrap:wrap}
+  .opts input{width:80px;background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px}
+  .banner{border-radius:10px;padding:13px 16px;font-size:14px;display:flex;gap:10px;align-items:flex-start;margin-top:18px}
   .banner.ok{background:var(--okbg);color:#065f46}
   .banner.warn{background:var(--warnbg);color:#92400e}
   .banner.err{background:var(--errbg);color:#991b1b}
-  .banner .ico{font-size:18px;line-height:1.2}
-  table.prod{width:100%;border-collapse:collapse;margin-top:14px;font-size:14px}
+  .banner .ico{font-size:18px}
+  .panels{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+  @media(max-width:760px){.panels{grid-template-columns:1fr}}
+  .panel-title{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 8px}
+  pre.raw{background:#0b1220;border:1px solid var(--border);border-radius:10px;padding:14px;margin:0;font-family:Consolas,monospace;font-size:13px;color:#a5d6ff;white-space:pre-wrap;word-break:break-word;max-height:340px;overflow:auto}
+  table.prod{width:100%;border-collapse:collapse;font-size:14px}
   table.prod td{padding:8px 10px;border-bottom:1px solid var(--border)}
-  table.prod td.k{color:var(--muted);width:40%}
+  table.prod td.k{color:var(--muted);width:42%}
   table.prod td.v{font-weight:600}
-  .hint{margin-top:18px;color:var(--muted);font-size:12px;line-height:1.5}
+  /* log */
+  .log-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+  .log-head button{background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 12px;cursor:pointer;font-size:13px}
+  table.log{width:100%;border-collapse:collapse;font-size:12.5px}
+  table.log th,table.log td{padding:7px 9px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top}
+  table.log th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+  .pill{font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px}
+  .pill.found{background:var(--okbg);color:#065f46}
+  .pill.nf{background:var(--warnbg);color:#92400e}
+  .pill.vf,.pill.err{background:var(--errbg);color:#991b1b}
+  .log-fields{color:var(--muted)}
+  .log-fields b{color:var(--text);font-weight:600}
+  .empty{color:var(--muted);text-align:center;padding:18px}
   /* modal */
   .overlay{position:fixed;inset:0;background:rgba(2,6,23,.7);display:none;align-items:center;justify-content:center;padding:20px;z-index:50}
   .overlay.show{display:flex}
   .modal{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:26px;width:min(100%,440px);box-shadow:0 20px 60px rgba(0,0,0,.5)}
   .modal h3{margin:0 0 6px;font-size:18px}
-  .modal p.m{margin:0 0 18px;color:var(--muted);font-size:14px}
-  .modal .preview{background:var(--panel2);border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:18px;max-height:160px;overflow:auto}
+  .modal p.m{margin:0 0 16px;color:var(--muted);font-size:14px}
+  .modal .preview{background:var(--panel2);border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:16px;max-height:150px;overflow:auto}
   .modal label{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
   .modal input{width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--panel2);color:var(--text);font-size:15px}
-  .modal .actions{display:flex;gap:10px;margin-top:22px}
+  .modal .actions{display:flex;gap:10px;margin-top:20px}
   .modal button{flex:1;border:0;border-radius:10px;padding:12px;font-size:14px;font-weight:600;cursor:pointer}
   .modal .confirm{color:#fff;background:linear-gradient(180deg,var(--ok),#0f7a37)}
   .modal .cancel{background:var(--panel2);color:var(--text);border:1px solid var(--border)}
@@ -68,43 +85,60 @@
   <main>
     <div class="card">
       <h2>Buscar / Importar producto</h2>
-      <p class="sub">Introduce o escanea el código del producto. Esto llama al endpoint de INT5.</p>
+      <p class="sub">Introduce o escanea el código. La app consulta a INT5, que busca en el CSV y devuelve el producto.</p>
+      <p class="colinfo" id="colInfo">Consultando columna de búsqueda…</p>
 
       <div class="scan-row">
-        <input id="code" placeholder="Código de producto (ej. w.csv col 0)" spellcheck="false" autofocus>
+        <input id="code" placeholder="Código de producto" spellcheck="false" autofocus>
         <button id="goBtn">Buscar</button>
       </div>
       <div class="opts">
-        <label>Columna de búsqueda (override opcional):</label>
+        <label>Override columna (opcional):</label>
         <input id="searchIdx" type="number" min="0" placeholder="config">
-        <span id="endpointInfo">→ POST /api/product/import</span>
+        <span>→ POST /api/product/import</span>
       </div>
 
-      <div class="result" id="result"></div>
+      <div id="banner"></div>
 
-      <p class="hint">
-        Flujo: <b>Auto</b> importa directo. <b>Manual</b> abre un popup de validación —
-        si el nivel es <b>superior</b> pide login de supervisor; si es <b>mismo nivel</b>,
-        basta el botón de verificación del propio operador. La identidad queda en el log
-        (<code>requestedBy</code> / <code>confirmedBy</code>).
-      </p>
+      <div class="panels" id="panels" style="display:none">
+        <div>
+          <p class="panel-title">JSON crudo</p>
+          <pre class="raw" id="rawJson"></pre>
+        </div>
+        <div>
+          <p class="panel-title">Datos legibles</p>
+          <table class="prod"><tbody id="readable"></tbody></table>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="log-head">
+        <h2 style="margin:0">Sync Log</h2>
+        <button id="refreshLog">↻ Refrescar</button>
+      </div>
+      <p class="sub">Cada verificación (auto o manual) queda registrada en el backend. También se ve en Configuración → Persistence.</p>
+      <table class="log">
+        <thead><tr>
+          <th>Fecha</th><th>Código</th><th>Resultado</th><th>Solicitado por</th><th>Confirmado por</th><th>Campos</th><th>Error</th>
+        </tr></thead>
+        <tbody id="logBody"><tr><td colspan="7" class="empty">Cargando…</td></tr></tbody>
+      </table>
     </div>
   </main>
 
-  <!-- Modal de confirmación (modo Manual) -->
+  <!-- Modal confirmación (modo Manual) -->
   <div class="overlay" id="overlay">
     <div class="modal">
       <h3>Confirmar importación <span id="levelBadge" class="badge-level"></span></h3>
       <p class="m" id="modalMsg"></p>
       <div class="preview" id="modalPreview"></div>
-
       <div id="superiorFields" style="display:none">
         <label>Usuario supervisor</label>
         <input id="supUser" placeholder="supervisor.xxx" spellcheck="false">
         <label>Contraseña</label>
         <input id="supPass" type="password" placeholder="••••••">
       </div>
-
       <div class="actions">
         <button class="cancel" id="cancelBtn">Cancelar</button>
         <button class="confirm" id="confirmBtn">Confirmar</button>
@@ -114,30 +148,42 @@
 
 <script>
 const $ = id => document.getElementById(id);
-let pending = null; // { validationLevel, productCode }
-
-function showBanner(type, ico, html){
-  $('result').innerHTML = `<div class="banner ${type}"><span class="ico">${ico}</span><div>${html}</div></div>`;
-}
-function renderProduct(p){
-  const rows = Object.entries(p || {}).map(([k,v]) =>
-    `<tr><td class="k">${esc(k)}</td><td class="v">${esc(String(v))}</td></tr>`).join('');
-  return `<table class="prod">${rows}</table>`;
-}
+let pending = null;
 function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
+function showBanner(type,ico,html){ $('banner').innerHTML = `<div class="banner ${type}"><span class="ico">${ico}</span><div>${html}</div></div>`; }
+function clearProduct(){ $('panels').style.display='none'; $('rawJson').textContent=''; $('readable').innerHTML=''; }
+function showProduct(p){
+  $('rawJson').textContent = JSON.stringify(p, null, 2);
+  $('readable').innerHTML = Object.entries(p||{}).map(([k,v]) =>
+    `<tr><td class="k">${esc(k)}</td><td class="v">${esc(String(v))}</td></tr>`).join('');
+  $('panels').style.display='grid';
+}
+function previewTable(p){
+  return '<table class="prod"><tbody>' + Object.entries(p||{}).map(([k,v]) =>
+    `<tr><td class="k">${esc(k)}</td><td class="v">${esc(String(v))}</td></tr>`).join('') + '</tbody></table>';
+}
+
+// ---- columna de búsqueda configurada ----
+async function loadSearchColumn(){
+  try{
+    const d = await (await fetch('/api/product/search-column')).json();
+    if(d.configured){
+      $('colInfo').innerHTML = `Columna de búsqueda configurada: <b>${esc(d.columnName||('índice '+d.searchColumnIndex))}</b> (índice ${d.searchColumnIndex})`;
+    }else{
+      $('colInfo').innerHTML = '⚠️ No hay columna de búsqueda configurada. Configúrala en INT5 → Mapping.';
+    }
+  }catch(e){ $('colInfo').textContent = 'No se pudo consultar la columna de búsqueda.'; }
+}
+
+// ---- import ----
 async function importProduct(confirmed=false, confirmedBy=null){
   const productCode = $('code').value.trim();
   if(!productCode){ showBanner('warn','⚠️','Introduce un código de producto.'); return; }
-  const body = {
-    productCode,
-    requestedBy: $('operator').value.trim() || 'unknown',
-    confirmed,
-    confirmedBy
-  };
-  // La columna de búsqueda está en la config de INT5; solo se envía si se quiere forzar un override.
+  const body = { productCode, requestedBy: $('operator').value.trim()||'unknown', confirmed, confirmedBy };
   const idxRaw = $('searchIdx').value.trim();
-  if (idxRaw !== '') body.searchColumnIndex = parseInt(idxRaw, 10);
+  if(idxRaw!=='') body.searchColumnIndex = parseInt(idxRaw,10);
+
   showBanner('warn','⏳','Consultando…');
   let data;
   try{
@@ -150,54 +196,76 @@ async function importProduct(confirmed=false, confirmedBy=null){
 function handle(data){
   switch(data.status){
     case 'IMPORTED':
-      showBanner('ok','✓',`<b>Producto importado</b> (${esc(data.productCode)})` + renderProduct(data.product));
-      break;
+      showBanner('ok','✓',`<b>Producto importado</b> (${esc(data.productCode)})`);
+      showProduct(data.product); loadLog(); break;
     case 'NOT_FOUND':
       showBanner('warn','🔍',`Producto <b>${esc(data.productCode)}</b> no encontrado en el CSV.`);
-      break;
+      clearProduct(); loadLog(); break;
     case 'VALIDATION_FAILED':
-      showBanner('err','✗',`Datos incompletos: ${esc(data.message||'campo requerido vacío')}`);
-      break;
+      showBanner('err','✗',`Datos incompletos: ${esc(data.message||'')}`);
+      clearProduct(); loadLog(); break;
     case 'CONFIRMATION_REQUIRED':
-      openModal(data);
-      break;
-    case 'ERROR':
+      openModal(data); break;
     default:
       showBanner('err','✗',`Error: ${esc(data.error||data.message||'desconocido')}`);
+      clearProduct(); loadLog();
   }
 }
 
+// ---- modal manual ----
 function openModal(data){
-  pending = { validationLevel: data.validationLevel || 'superior', productCode: data.productCode };
+  pending = { validationLevel: data.validationLevel||'superior' };
   const lvl = pending.validationLevel;
-  $('levelBadge').textContent = lvl === 'superior' ? 'NIVEL SUPERIOR' : 'MISMO NIVEL';
-  $('levelBadge').className = 'badge-level ' + (lvl === 'superior' ? 'superior' : 'same');
-  $('modalMsg').textContent = data.message || 'Confirma la importación del producto.';
-  $('modalPreview').innerHTML = renderProduct(data.preview);
-  $('superiorFields').style.display = lvl === 'superior' ? 'block' : 'none';
-  $('confirmBtn').textContent = lvl === 'superior' ? 'Validar e importar' : `Verificado por ${$('operator').value.trim()}`;
+  $('levelBadge').textContent = lvl==='superior' ? 'NIVEL SUPERIOR' : 'MISMO NIVEL';
+  $('levelBadge').className = 'badge-level '+(lvl==='superior'?'superior':'same');
+  $('modalMsg').textContent = data.message||'Confirma la importación.';
+  $('modalPreview').innerHTML = previewTable(data.preview);
+  $('superiorFields').style.display = lvl==='superior' ? 'block':'none';
+  $('confirmBtn').textContent = lvl==='superior' ? 'Validar e importar' : `Verificado por ${$('operator').value.trim()}`;
   $('supUser').value=''; $('supPass').value='';
   $('overlay').classList.add('show');
 }
 function closeModal(){ $('overlay').classList.remove('show'); pending=null; }
-
 $('confirmBtn').addEventListener('click', ()=>{
   if(!pending) return;
   let confirmedBy;
-  if(pending.validationLevel === 'superior'){
-    const u = $('supUser').value.trim();
-    if(!u){ $('supUser').focus(); return; }
-    // La validación real de la contraseña la haría la app de producción / su backend.
-    confirmedBy = u;
-  }else{
-    confirmedBy = $('operator').value.trim() || 'unknown';
-  }
-  closeModal();
-  importProduct(true, confirmedBy);
+  if(pending.validationLevel==='superior'){
+    const u=$('supUser').value.trim(); if(!u){ $('supUser').focus(); return; }
+    confirmedBy=u; // la contraseña la validaría el backend real de producción
+  }else{ confirmedBy=$('operator').value.trim()||'unknown'; }
+  closeModal(); importProduct(true, confirmedBy);
 });
 $('cancelBtn').addEventListener('click', ()=>{ closeModal(); showBanner('warn','⏹️','Importación cancelada por el operador.'); });
+
+// ---- sync log ----
+async function loadLog(){
+  try{
+    const d = await (await fetch('/api/sync-log?page=1&limit=20')).json();
+    const rows = (d.entries||[]);
+    if(rows.length===0){ $('logBody').innerHTML='<tr><td colspan="7" class="empty">Sin registros todavía.</td></tr>'; return; }
+    $('logBody').innerHTML = rows.map(e=>{
+      const r=e.result||'';
+      const cls = r==='FOUND'?'found':r==='NOT_FOUND'?'nf':r==='VALIDATION_FAILED'?'vf':'err';
+      const fields = e.fields ? Object.entries(e.fields).map(([k,v])=>`<b>${esc(k)}</b>:${esc(String(v))}`).join(', ') : '—';
+      return `<tr>
+        <td>${esc(new Date(e.timestamp).toLocaleString())}</td>
+        <td>${esc(e.productCode||'')}</td>
+        <td><span class="pill ${cls}">${esc(r)}</span></td>
+        <td>${esc(e.requestedBy||'—')}</td>
+        <td>${esc(e.confirmedBy||'—')}</td>
+        <td class="log-fields">${fields}</td>
+        <td>${esc(e.error||'')}</td>
+      </tr>`;
+    }).join('');
+  }catch(e){ $('logBody').innerHTML=`<tr><td colspan="7" class="empty">Error al cargar el log.</td></tr>`; }
+}
+
 $('goBtn').addEventListener('click', ()=>importProduct());
 $('code').addEventListener('keydown', e=>{ if(e.key==='Enter') importProduct(); });
+$('refreshLog').addEventListener('click', loadLog);
+
+loadSearchColumn();
+loadLog();
 </script>
 </body>
 </html>

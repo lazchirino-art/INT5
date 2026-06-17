@@ -1028,6 +1028,26 @@ app.post('/api/product/import-api', async (req, res) => {
 });
 
 /**
+ * GET /api/product/search-column
+ * Devuelve la columna de búsqueda configurada (índice + nombre).
+ * Pensado para que la app de producción sepa por qué columna se busca,
+ * sin exponer el resto de la configuración (credenciales, etc.).
+ */
+app.get('/api/product/search-column', (req, res) => {
+  try {
+    if (!existsSync(CONFIG_FILE)) return res.json({ configured: false });
+    const config = JSON.parse(readFileSync(CONFIG_FILE, 'utf-8'));
+    const idx = config.searchColumnIndex;
+    if (idx === undefined || idx === null) return res.json({ configured: false });
+    const cols = Array.isArray(config.parser?.columns) ? config.parser.columns : [];
+    const col = cols.find(c => c.index === idx);
+    res.json({ configured: true, searchColumnIndex: idx, columnName: col ? col.name : null });
+  } catch (e) {
+    res.status(500).json({ configured: false, error: e.message });
+  }
+});
+
+/**
  * GET /
  * Serve main page
  */
