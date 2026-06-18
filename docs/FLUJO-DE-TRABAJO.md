@@ -1,232 +1,266 @@
-# INT5 — Flujo de Trabajo (paso a paso, front y back)
+# INT5 — Flujo de Trabajo (uso + flujo técnico interno)
 
 > Documento de flujo **completo y actualizado** (CSV). Para cada pestaña del
-> wizard y para el flujo de importación de producción se describe qué hace el
-> usuario, el frontend, el backend y qué se devuelve/muestra.
+> wizard y para la importación de producción se describe el **flujo de uso**
+> (usuario/front) **y el flujo interno del software** (funciones, módulos,
+> transformaciones de datos y persistencia, paso a paso).
 >
 > Complementa a **[INT5-DOCUMENTACION-TECNICA.md](INT5-DOCUMENTACION-TECNICA.md)**
-> (visión global) y **[API-ENDPOINT.md](API-ENDPOINT.md)** (contrato).
+> (visión global) y **[API-ENDPOINT.md](API-ENDPOINT.md)** (contrato de endpoints).
 
 Versión: 2026-06-18.
 
 ---
 
-## Visión general
+## Componentes internos (mapa de funciones)
+
+**Backend**
+- `server.js` — Express, define los endpoints. Funciones clave: `unwrap()` (merge config), `loadProductionContext()` (contexto de producción), `applyMapping()`/`applyMappingToList()`, `withSmbRetries()` + `sleep()` (reintentos).
+- `backend/network-path-handler-windows.js` — clase `NetworkPathHandlerWindows`: `detect()`, `listFilesViaPS()`, `buildPowerShellCommand()`, `patternToRegex()`, `applyPattern()`, `selectFile()`, `readFile()`, `validatePath()`.
+- `backend/credential-crypto.js` — clase `CredentialCrypto`: `decrypt()`, `getCryptoKey()` (SHA-256 del secreto → clave AES), `base64ToBytes()`.
+- `backend/csv-utils.js` — `parseCSVContent()`, `parseCSVLine()`, `searchProductInRows()`, `rowToObject()`, `formatValue()`.
+- `backend/local-db.js` — `insertSyncLog()`, `getSyncLog()`, `upsertProduct()`, `readJsonFile()`/`writeJsonFile()`/`ensureDataDir()`.
+
+**Frontend (vanilla JS)**
+- `network-path-client.js` (HTTP), `credential-crypto.js` (cifrado AES-GCM en navegador), `config-loader.js` (carga al abrir), `csv-parser.js` (validación/preview), `parser-ui.js`, `mapping-ui.js`, `validation-ui.js`, `persistence-ui.js`, `csv-integration.js` (orquestación/tabs).
+
+**Persistencia**
+- `config/app-config.json` (configuración), `data/sync-log.json` (log append-only), `data/products.json` (caché).
+
+---
+
+## `/api/config/save` y `/api/config/load` (transversales)
+
+Todas las pestañas guardan/cargan con estos dos. Flujo interno del **save**:
 
 ```
-CONFIGURACIÓN (una vez, vía wizard)          OPERACIÓN (a diario, vía API)
-─────────────────────────────────           ─────────────────────────────
-1. Connector  → conexión SMB                 App de producción
-2. Parser     → columnas/formato      ──►      POST /api/product/import
-3. Mapping    → tags + col. búsqueda             ├─ lee CSV (SMB)
-4. Validation → campos requeridos                ├─ busca + valida
-5. Persistence→ modo + nivel valid.              ├─ confirma (manual)
-                                                 └─ cachea + registra log
-        ↓ todo se guarda en
-        config/app-config.json
+POST /api/config/save  con UNA sección, p.ej. { mapping: [...] }
+   ↓
+[Back] Lee la config actual (readFileSync app-config.json → JSON.parse), o {} si no existe
+   ↓
+[Back] unwrap(val, key): si una sección viene doble-anidada (connection.connection) la desempaqueta
+   ↓
+[Back] Construye mergedConfig tomando, por cada clave, la nueva si viene, si no la existente:
+        connection, parser, mapping, validation, persistence, searchColumnIndex, apiResp
+        (apiResp se mergea a su vez sub-sección a sub-sección)
+   ↓
+[Back] writeFileSync(app-config.json, JSON.stringify(mergedConfig, null, 2))
+   ↓
+[Back] Responde { status: SUCCESS, config: mergedConfig }
 ```
-
-Cada pestaña **guarda solo su sección** (`/api/config/save` hace merge con el resto) y **recarga lo guardado** al volver a entrar.
+**load:** `readFileSync` → `JSON.parse` → `{ status: SUCCESS, config }` (o `NOT_FOUND`). Los archivos estáticos se sirven con `Cache-Control: no-cache`.
 
 ---
 
 ## Tab 1 — Connector
 
-**Objetivo:** definir el recurso SMB y validar que el archivo es accesible.
+### Flujo de uso
+El usuario rellena ruta + patrón (+ auth opcional), pulsa **Test Connection**; si sale READY, pulsa **Save Configuration**.
 
-### Test Connection
+### Flujo interno — Test Connection
 ```
-[Front] El usuario rellena ruta, patrón, (auth opcional) y pulsa "Test Connection"
+[Front] csv-integration.js: valida campos mínimos (path, patrón)
+[Front] network-path-client.js: POST /test-connection { path, pattern, username?, password?, domain? }
    ↓
-[Front] csv-integration.js valida campos mínimos (path + patrón)
+[Back] server.js (/test-connection) → new NetworkPathHandlerWindows(credentialCrypto)
    ↓
-[Front] network-path-client.js → POST /test-connection { path, pattern, username?, password?, domain? }
-   ↓
-[Back] server.js valida la ruta UNC (debe empezar por \\)
-   ↓
-[Back] network-path-handler-windows.js ejecuta por PowerShell/cmd:
-        - sin auth:  cmd /c dir <ruta>
-        - con auth:  net use <ruta> /user:[DOMINIO\]usuario pass & dir <ruta>
-   ↓
-[Back] Parsea la salida del dir (ignora <DIR>, cabeceras y resúmenes)
-   ↓
-[Back] Aplica el patrón (wildcard → regex) y exige EXACTAMENTE 1 archivo
+[Back] handler.detect(credentials):
+        1. Si hay password cifrada → credentialCrypto.decrypt():
+             getCryptoKey(): SHA-256(ENCRYPTION_SECRET) → importKey AES-GCM
+             base64ToBytes(iv), base64ToBytes(data) → webcrypto.subtle.decrypt(AES-GCM)
+        2. validatePath(): exige formato UNC (\\...)
+        3. listFilesViaPS(path, creds):
+             buildPowerShellCommand():
+               - sin user/pass → `cmd /c dir <path>`
+               - con user/pass → `net use <path> /user:[DOMINIO\]usuario pass & dir <path>`
+             execAsync(cmd, timeout 10s)
+             Parseа stdout línea a línea:
+               - descarta líneas con <DIR> (carpetas, '.', '..'), cabeceras y resúmenes
+               - se queda con líneas con fecha → extrae el nombre (parts.slice(3))
+        4. applyPattern(files, pattern): patternToRegex (wildcard→regex) → filtra
+        5. selectFile(matching): exige exactamente 1 (lanza si 0 o >1)
    ↓
 [Back] Devuelve { status: READY|FAILED|PARTIAL, file, logs[] }
    ↓
-[Front] Renderiza los logs y el estado; si READY, habilita "Save Configuration"
+[Front] Renderiza logs + estado; si READY habilita Save
 ```
-> 1 intento, sin reintentos (acción manual → feedback inmediato).
+> 1 intento (acción manual). Mensajes de error mapeados (system error 67/64/5, access denied, etc.).
 
-### Save Configuration
+### Flujo interno — Save
 ```
-[Front] Pulsa "Save Configuration"
-   ↓
-[Front] credential-crypto.js cifra la contraseña con AES-GCM (enc:v1:aes-gcm:...)
-   ↓
-[Front] POST /api/config/save { connection: {...} }
-   ↓
-[Back] Merge con la config existente → escribe config/app-config.json
-   ↓
-[Front] Muestra "SAVE: SAVED"
+[Front] credential-crypto.js (navegador): cifra password con AES-GCM → enc:v1:aes-gcm:iv:data
+[Front] POST /api/config/save { connection: {..., password: "enc:..."} }
+[Back] merge → writeFileSync(app-config.json)
 ```
-
-### Comportamiento según autenticación
-- **Auth desmarcado:** el acceso usa la **identidad de Windows del proceso** (no anónimo). En un recurso protegido del cliente → deniega ("la carpeta requiere credenciales").
-- **Auth marcado:** se conecta con usuario/contraseña (y dominio si aplica).
 
 ---
 
 ## Tab 2 — Parser
 
-**Objetivo:** definir cómo leer el CSV (delimitador, header, columnas) y previsualizar.
+### Flujo de uso
+El usuario define delimitador, Has Header, columnas (nombre/índice/tipo), pulsa **Check Configuration** (ve preview) y **Save**.
 
-### Check Configuration
+### Flujo interno — Check
 ```
-[Front] El usuario define delimitador, Has Header, comillas y añade columnas
-        (nombre + índice + tipo). Pulsa "Check Configuration"
+[Front] parser-ui.js: getUserColumns() + getParserConfig()
+[Front] obtiene el contenido del archivo (backend lo lee del SMB) y llama a
+        csv-parser.js → CSVParser.validateConfiguration(connectorConfig, parserConfig):
+          - parseCSVLine() de la cabecera o, si Has Header=No, autogenera
+            columnNames por POSICIÓN (Column0, Column1, …)
+          - valida que cada índice de usuario existe
+          - recorre filas comprobando consistencia de nº de columnas
+          - genera preview = array posicional de filas (parseCSVLine por fila)
    ↓
-[Front] parser-ui.js recoge la config y, vía csv-parser.js, valida contra el
-        contenido del archivo (lo obtiene del backend):
-        - parsea cabeceras o autogenera nombres (Column0, Column1, … por POSICIÓN)
-        - valida que los índices existen
-        - comprueba consistencia de columnas por fila
-        - genera el preview (array posicional)
+[Front] parser-ui.js: validateUserColumnsAgainstFile() (compara nombres solo si Has Header=Yes)
    ↓
-[Front] showPreview pinta las filas leyendo cada celda por el COLUMN INDEX
-        configurado (igual que producción) → respeta el orden que definiste
+[Front] showPreview(preview, userColumns): pinta cada celda como row[col.index]
+        (lee por COLUMN INDEX → coincide con lo que hará producción en rowToObject)
    ↓
-[Front] Si todo OK, habilita "Save Configuration"
+[Front] updateCheckButtonState() / habilita Save si todo correcto
 ```
-> Has Header = No → los nombres son automáticos y consecutivos (Column0…); el índice solo selecciona qué columna del archivo se lee.
 
-### Save Configuration
+### Flujo interno — Save
 ```
-[Front] Pulsa "Save" → POST /api/config/save { parser: { delimiter, hasHeader, columns[...] } }
-   ↓
-[Back] Merge → app-config.json ; [Front] etiqueta "STATUS: SAVED"
-   ↓
-[Front] Auto-rellena la pestaña Mapping con las columnas guardadas
+[Front] POST /api/config/save { parser: { delimiter, hasHeader, quoteChar, escapeChar, columns[...] } }
+[Back] merge → app-config.json
+[Front] updateStatusDisplay('SAVED'); MappingUI.loadFromParser() (auto-rellena Mapping)
 ```
 
 ---
 
 ## Tab 3 — Mapping
 
-**Objetivo:** asignar a cada columna su nombre de salida (JSON tag) y elegir la columna de búsqueda.
+### Flujo de uso
+Asigna un JSON tag a cada columna y elige la **Search Column** (la del código). Guarda.
 
+### Flujo interno
 ```
-[Front] Al entrar, loadFromParser() → GET /api/config/load
+[Front] Al entrar: mapping-ui.js loadFromParser() → GET /api/config/load
+        - lee config.parser.columns → una fila por columna
+        - índice de mapping guardado (savedMap por csvColumn) → restaura jsonTag
+        - rellena el <select> Search Column con las columnas (value = índice)
    ↓
-[Front] Pinta una fila por columna del Parser (CSV Column → JSON Tag)
-        y rellena el selector "Search Column" con esas columnas
+[Front] Usuario escribe tags + elige Search Column
    ↓
-[Front] El usuario escribe los JSON tags y elige la columna de búsqueda
-        (la que contiene el código que enviará producción)
+[Front] saveMapping():
+        - valida tag no vacío en cada fila y que Search Column esté elegida
+        - POST /api/config/save {
+            mapping: [{ csvColumn, index, jsonTag, include: true }],
+            searchColumnIndex
+          }
    ↓
-[Front] Pulsa "Save Mapping":
-        - valida que cada fila tenga tag y que se haya elegido Search Column
-        - POST /api/config/save { mapping: [{csvColumn, index, jsonTag, include:true}],
-                                   searchColumnIndex }
-   ↓
-[Back] Merge → app-config.json ; [Front] "MAPPING: SAVED"
+[Back] merge → app-config.json (mapping + searchColumnIndex)
 ```
-> En CSV todas las columnas del Parser se exponen (no hay checkbox Include). `searchColumnIndex` se guarda una vez aquí → producción solo envía `productCode`.
+> En CSV `include` siempre `true` (sin checkbox). `searchColumnIndex` queda guardado → producción solo envía `productCode`.
 
 ---
 
 ## Tab 4 — Validation
 
-**Objetivo:** marcar qué campos son obligatorios.
-
+### Flujo interno
 ```
-[Front] Al entrar, loadFromMapping() → GET /api/config/load
+[Front] validation-ui.js loadFromMapping() → GET /api/config/load
+        - toma config.mapping (include !== false)
+        - restaura los "required" desde config.validation (savedRules por csvColumn)
    ↓
-[Front] Pinta una fila por campo mapeado (CSV Column | JSON Tag | Required)
-        y restaura los "required" ya guardados
+[Front] Usuario marca requeridos → saveRules():
+        POST /api/config/save { validation: [{ csvColumn, jsonTag, required }] }
    ↓
-[Front] El usuario marca los campos obligatorios y pulsa "Save"
-   ↓
-[Front] POST /api/config/save { validation: [{csvColumn, jsonTag, required}] }
-   ↓
-[Back] Merge → app-config.json ; [Front] "VALIDATION: SAVED"
+[Back] merge → app-config.json
 ```
-> En la importación, si un campo `required` viene vacío → `VALIDATION_FAILED`.
+> En la importación, `required` vacío → `VALIDATION_FAILED`.
 
 ---
 
 ## Tab 5 — Persistence
 
-**Objetivo:** definir el modo de operación y ver el historial.
-
+### Flujo interno
 ```
-[Front] El usuario elige Trigger Mode (Auto / Manual)
-        - si Manual → aparece "Validation Level" (Superior / Mismo nivel)
+[Front] persistence-ui.js:
+        - toggleValidationLevel(): muestra "Validation Level" solo si Manual
+        - saveConfig(): POST /api/config/save { persistence: { triggerMode, validationLevel? } }
+        - loadConfig(): GET /api/config/load → restaura triggerMode/validationLevel
+        - loadLog(page): GET /api/sync-log?page&limit → renderiza tabla (píldora + campos en línea)
    ↓
-[Front] Pulsa "Save" → POST /api/config/save
-        { persistence: { triggerMode, validationLevel? } }
-   ↓
-[Back] Merge → app-config.json ; [Front] "PERSISTENCE: SAVED"
-
-[Front] El Sync Log se carga con GET /api/sync-log (tabla paginada)
-        y muestra cada importación con sus valores y el operador
+[Back] merge → app-config.json ; getSyncLog() lee data/sync-log.json (newest-first, paginado)
 ```
 
 ---
 
-## Flujo de Importación (producción)
+## Flujo de Importación (producción) — el núcleo
 
-**Endpoint:** `POST /api/product/import` — lo llama la app de producción.
+**Endpoint:** `POST /api/product/import`  ·  Body: `{ productCode, requestedBy, confirmed?, confirmedBy?, searchColumnIndex? }`
 
+### Flujo interno completo
 ```
-[Producción] POST /api/product/import { productCode, requestedBy, confirmed?, confirmedBy? }
+[Back] Valida que viene productCode
    ↓
 [Back] loadProductionContext():
-        1. Lee y valida app-config.json
-        2. Descifra la contraseña SMB
-        3. Detecta el archivo por patrón (soporta nombres dinámicos)
-        4. Lee el archivo y parsea las filas
-        → REINTENTOS: 3 intentos, 10 s entre cada uno (solo acceso SMB)
+        1. readFileSync(app-config.json) → JSON.parse → config
+        2. Valida connection.path y (filename | fileNamePattern) y parser.columns
+        3. CredentialCrypto.decrypt(password) si está cifrada
+        4. new NetworkPathHandlerWindows(crypto); creds = { username, password(desc), domain }
+        5. withSmbRetries( async () => {           ← 3 intentos, 10 s entre cada uno
+              si no hay filename fijo:
+                files = listFilesViaPS(path, creds)        (dir por PowerShell)
+                matching = applyPattern(files, fileNamePattern)
+                filename = selectFile(matching)            (1 exacto)
+              return handler.readFile({ path, filename, ...creds })  (type por cmd)
+           })                                          ← solo se reintenta esta parte SMB
+        6. csvUtils.parseCSVContent(fileContent, delimiter, hasHeader, quote, escape)
+              → parseCSVLine por fila → rows: string[][]
+        7. return { config, connectorConfig, parserConfig, mappingConfig, rows }
    ↓
-[Back] Resuelve la columna de búsqueda (request override → config.searchColumnIndex)
+[Back] effectiveSearchIndex = request.searchColumnIndex ?? config.searchColumnIndex
+        (si ninguno → ERROR "search column not configured")
    ↓
-[Back] Busca el productCode en esa columna (en memoria)
+[Back] csvUtils.searchProductInRows(rows, productCode, effectiveSearchIndex, parser.columns)
+        → compara el valor de cada fila en esa columna (en memoria)
         │
-        ├─ No existe → log NOT_FOUND → responde { status: NOT_FOUND }
+        ├─ NO encontrado:
+        │     insertSyncLog({ result:'NOT_FOUND', fields:null, requestedBy, confirmedBy })
+        │     → { status: NOT_FOUND }
         │
-        └─ Existe → aplica el mapping (jsonTag) → valida campos requeridos
-              │
-              ├─ Falta un requerido → log VALIDATION_FAILED → { status: VALIDATION_FAILED, message }
-              │
-              ├─ Modo MANUAL y confirmed=false → { status: CONFIRMATION_REQUIRED,
-              │        validationLevel, preview }   (NO se registra en log)
-              │        → producción muestra login supervisor (superior) o botón (same)
-              │        → reenvía con confirmed=true + confirmedBy
-              │
-              └─ Auto, o Manual confirmado →
-                    upsertProduct() [caché]  +  insertSyncLog(FOUND, fields, requestedBy, confirmedBy)
-                    → responde { status: IMPORTED, product }
+        └─ Encontrado → applyMapping(product, mapping):
+              por cada {csvColumn, jsonTag, include}: si include!==false → mapped[jsonTag] = product[csvColumn]
+              (internamente rowToObject ya leyó cada valor por col.index y aplicó formatValue por tipo)
+              ↓
+           Validación: por cada regla required → si mapped[jsonTag] vacío:
+              insertSyncLog({ result:'VALIDATION_FAILED', fields:mapped, ... })
+              → { status: VALIDATION_FAILED, message }
+              ↓
+           triggerMode = config.persistence.triggerMode ; validationLevel = config.persistence.validationLevel
+              ↓
+           Si MANUAL y confirmed=false:
+              → { status: CONFIRMATION_REQUIRED, validationLevel, preview: mapped }
+              (NO insertSyncLog, NO upsertProduct)   ← no es acción completada
+              Producción muestra login supervisor (superior) o botón (same)
+              y reenvía con confirmed=true + confirmedBy
+              ↓
+           Auto, o Manual confirmado:
+              upsertProduct({ productCode, data: mapped }) → data/products.json (caché)
+              insertSyncLog({ result:'FOUND', fields:mapped, requestedBy, confirmedBy }) → data/sync-log.json
+              → { status: IMPORTED, product: mapped }
 ```
 
-### Qué se registra en el log (`data/sync-log.json`, append-only)
-```
-{ timestamp, productCode, result, requestedBy, confirmedBy, fields, error }
-```
-- `result`: FOUND | NOT_FOUND | VALIDATION_FAILED | ERROR
-- `fields`: valores de cada columna configurada (null si no hay producto)
-- `CONFIRMATION_REQUIRED` no se registra (aún no es una acción completada)
+### Internos de persistencia (local-db.js)
+- `insertSyncLog(entry)`: `ensureDataDir()` → `readJsonFile(sync-log.json, [])` → `push({ id, ...entry })` → `writeJsonFile()`. Append-only, nunca se purga.
+- `upsertProduct({ productCode, data })`: `readJsonFile(products.json, {})` → `cache[productCode] = { ...data, _updatedAt }` → `writeJsonFile()`.
+- `getSyncLog({ page, limit })`: lee, invierte (newest-first), pagina.
 
-El mismo log se ve en **Persistence → Sync Log** y en la vista mock de producción.
+### Internos de cifrado (credential-crypto.js)
+- `getCryptoKey()`: `TextEncoder` del `ENCRYPTION_SECRET` → `subtle.digest('SHA-256')` → `importKey('raw', ..., AES-GCM)`.
+- `decrypt('enc:v1:aes-gcm:iv:data')`: separa, `base64ToBytes` de iv y data → `subtle.decrypt({AES-GCM, iv})` → texto.
 
 ---
 
-## Resumen de endpoints por paso
+## Resumen: endpoint + funciones internas por paso
 
-| Paso | Endpoint |
-|------|----------|
-| Connector — test | `POST /test-connection` |
-| Cualquier "Save" del wizard | `POST /api/config/save` |
-| Cualquier carga de pestaña | `GET /api/config/load` |
-| Producción — importar | `POST /api/product/import` |
-| Producción — columna de búsqueda | `GET /api/product/search-column` |
-| Historial / log | `GET /api/sync-log` |
+| Paso | Endpoint | Funciones internas clave |
+|------|----------|--------------------------|
+| Connector test | `POST /test-connection` | `detect` → `decrypt` → `validatePath` → `listFilesViaPS`/`buildPowerShellCommand` → `applyPattern` → `selectFile` |
+| Guardar (cualquier tab) | `POST /api/config/save` | `unwrap` + merge por secciones → `writeFileSync` |
+| Cargar (cualquier tab) | `GET /api/config/load` | `readFileSync` → `JSON.parse` |
+| Importar | `POST /api/product/import` | `loadProductionContext` (`withSmbRetries`→`listFilesViaPS`/`readFile`→`parseCSVContent`) → `searchProductInRows` → `applyMapping` → validación → `upsertProduct` + `insertSyncLog` |
+| Columna de búsqueda | `GET /api/product/search-column` | lee `config.searchColumnIndex` + nombre de columna |
+| Log | `GET /api/sync-log` | `getSyncLog` (reverse + paginado) |
