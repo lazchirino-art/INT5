@@ -1,12 +1,11 @@
-# INT5 — Flujo de Trabajo (uso + flujo técnico interno)
+# INT5 — Flujo Técnico (interno del software)
 
-> Documento de flujo **completo y actualizado** (CSV). Para cada pestaña del
-> wizard y para la importación de producción se describe el **flujo de uso**
-> (usuario/front) **y el flujo interno del software** (funciones, módulos,
-> transformaciones de datos y persistencia, paso a paso).
+> **Flujo interno** (CSV): funciones, módulos, transformaciones de datos y
+> persistencia, paso a paso. Orientado a desarrolladores.
 >
-> Complementa a **[INT5-DOCUMENTACION-TECNICA.md](INT5-DOCUMENTACION-TECNICA.md)**
-> (visión global) y **[API-ENDPOINT.md](API-ENDPOINT.md)** (contrato de endpoints).
+> Para el flujo **de uso** (operador / pantalla) ver **[FLUJO-DE-USO.md](FLUJO-DE-USO.md)**.
+> Visión global en **[INT5-DOCUMENTACION-TECNICA.md](INT5-DOCUMENTACION-TECNICA.md)**
+> y contrato en **[API-ENDPOINT.md](API-ENDPOINT.md)**.
 
 Versión: 2026-06-18.
 
