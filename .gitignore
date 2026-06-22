@@ -40,3 +40,8 @@ temp/
 # Build
 dist/
 build/
+
+# No entregar / herramientas de desarrollo
+old/
+.claude/
+gen-docx.cjs
