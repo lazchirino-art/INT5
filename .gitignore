@@ -16,6 +16,8 @@ package-lock.json
 .env
 .env.local
 .env.*.local
+# Excepción: backend/.env SÍ se incluye en la entrega (ver INSTALACION-PC-FINAL.md)
+!backend/.env
 
 # IDE
 .vscode/

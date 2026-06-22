@@ -62,22 +62,18 @@ npm install
 ```
 Esto crea la carpeta `node_modules/` con las dependencias.
 
-### Paso 4 — Configurar el secreto de cifrado (`backend/.env`)  ⚠️ importante
-Las credenciales SMB se guardan **cifradas** (AES-GCM). El servidor necesita el secreto en `backend/.env`, y **debe coincidir** con el secreto del frontend.
+### Paso 4 — El secreto de cifrado (`backend/.env`)  ⚠️ leer con atención
+El archivo **`backend/.env` SÍ se incluye** en esta entrega, así que **no hay que crear nada**: ya viene listo y funciona. Pero es importante que entiendas qué es y cómo afecta, por si en algún momento hay que reinstalar o cambiarlo.
 
-1. Crear el archivo **`backend/.env`** (no viene en el repositorio; está excluido por seguridad).
-2. Contenido:
-   ```
-   ENCRYPTION_SECRET=<el-mismo-valor-que-en-el-frontend>
-   PORT=3000
-   ```
-3. El valor de `ENCRYPTION_SECRET` **debe ser idéntico** al que aparece en las páginas del wizard, en la línea:
-   ```js
-   Object.defineProperty(window, 'CSV_INT_LOCAL_SECRET', { value: '....', ... })
-   ```
-   (en `src/pages/csv-integration.html` y `src/pages/index.html`).
+**Contenido de `backend/.env`:**
+```
+ENCRYPTION_SECRET=40e0122509f06d8ff649ff0366fa0e98702dac8f587110a0f1b4051aec0d0fd2
+PORT=3000
+```
 
-> Si el secreto del `.env` no coincide con el del frontend, las contraseñas guardadas **no se podrán descifrar** y el acceso SMB fallará. Si se cambia el secreto, hay que volver a guardar la configuración del Connector.
+Ver la explicación completa del secreto en la **sección 9** de este documento.
+
+> Regla de oro: el `ENCRYPTION_SECRET` del `.env` (backend) **debe ser idéntico** al `window.CSV_INT_LOCAL_SECRET` del frontend (en `src/pages/csv-integration.html` e `index.html`). En esta entrega ya coinciden. Si alguno se cambia y el otro no, las contraseñas guardadas dejan de descifrarse.
 
 ### Paso 5 — Arrancar el servidor
 - **Manual (para probar):**
@@ -144,7 +140,7 @@ Estas carpetas/archivos **no forman parte del producto** y no deben copiarse al 
 | `gen-docx.cjs` | Generador del Word (herramienta de desarrollo) |
 | `mock-api-server.js`, `iniciar-mock.bat` | Solo para pruebas de API-RESP (no parte de la entrega CSV) |
 
-> `backend/.env` tampoco se versiona (contiene el secreto). Hay que **crearlo** en el equipo final (Paso 4).
+> `backend/.env` **SÍ se incluye** en esta entrega (contiene el secreto de cifrado). No hay que crearlo a mano. Ver la sección 9.
 
 ---
 
@@ -157,3 +153,48 @@ Estas carpetas/archivos **no forman parte del producto** y no deben copiarse al 
 | Las contraseñas no descifran / SMB falla con credenciales correctas | El `ENCRYPTION_SECRET` del `.env` no coincide con el del frontend → corregir y volver a guardar el Connector. |
 | "La carpeta requiere credenciales" con auth desmarcado | Comportamiento correcto: el recurso del cliente exige credenciales → activar Authentication. |
 | El servidor no arranca solo al encender | Ejecutar `install-autostart.bat` como administrador. |
+
+---
+
+## 9. El secreto de cifrado, en detalle (IMPORTANTE)
+
+### 9.1. Qué problema resuelve
+En el **Connector** se guarda un **usuario y contraseña** para acceder a la carpeta de red del cliente. No queremos guardar esa contraseña en texto plano en `config/app-config.json` (cualquiera que abriera el archivo la vería). Por eso la contraseña se **cifra** (se vuelve ilegible) antes de guardarse. En el archivo aparece así:
+```json
+"password": "enc:v1:aes-gcm:tODZTkGHXVOJhNZS:RKSWkdyk+YHiq04nhHm1GraD9UANG6Xfuw=="
+```
+Eso es la contraseña cifrada con **AES-GCM**.
+
+### 9.2. El secreto = la llave
+Para cifrar y descifrar hace falta una **llave**, derivada de un **secreto** (una cadena larga). En este proyecto el secreto es:
+```
+40e0122509f06d8ff649ff0366fa0e98702dac8f587110a0f1b4051aec0d0fd2
+```
+
+**Analogía:** es la combinación de un candado. Con esa combinación se **cierra** (cifra) la contraseña y con la **misma** combinación se **abre** (descifra). Otra combinación no abre.
+
+### 9.3. Por qué el secreto está en DOS sitios (y deben coincidir)
+El cifrado ocurre en dos momentos:
+
+| Momento | Quién | Dónde está el secreto |
+|---------|-------|----------------------|
+| **Al guardar** el Connector (navegador) | Frontend **cifra** la contraseña | `src/pages/csv-integration.html` e `index.html`, en `window.CSV_INT_LOCAL_SECRET` |
+| **Al acceder al SMB** (servidor) | Backend **descifra** la contraseña | `backend/.env`, en `ENCRYPTION_SECRET` |
+
+➡️ **Los dos valores tienen que ser idénticos.** Lo que el navegador cierra, el servidor solo lo abre con la misma llave. En esta entrega **ya coinciden** (el valor de arriba).
+
+```
+Frontend cifra con secreto A  →  guarda contraseña cifrada en app-config.json
+Backend descifra con secreto A  →  ✅ accede al SMB
+Backend descifra con secreto B  →  ❌ falla aunque la contraseña sea correcta
+```
+
+### 9.4. Nivel de seguridad real (honesto)
+Como la llave está también en el **frontend** (en el HTML que se entrega), este cifrado sirve para que la contraseña **no se vea a simple vista** en `app-config.json` (protege de una mirada casual), **pero no protege** frente a alguien que tenga el código del proyecto (la llave está ahí mismo, en el HTML). Es **cifrado de ofuscación**, no seguridad fuerte. Incluir el `.env` en la entrega **no expone nada nuevo**, porque el secreto ya viaja en el HTML.
+
+### 9.5. Si alguna vez cambias el secreto
+1. Cambia el valor en **los dos sitios** (`.env` y los HTML) por el mismo valor nuevo.
+2. **Vuelve a guardar la configuración del Connector** (la contraseña se re-cifra con la llave nueva). Las contraseñas guardadas con la llave anterior dejarán de descifrarse.
+
+### 9.6. Mejora futura (no aplica a esta entrega)
+Para seguridad de verdad, habría que **sacar el secreto del frontend** y dejarlo solo en el backend (`.env`), rediseñando cómo se cifran las credenciales. Es una mejora para más adelante; para esta entrega el esquema actual es suficiente.
