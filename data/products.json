@@ -1,0 +1,17 @@
+{
+  "123456": {
+    "MED2222": "Medication A",
+    "PC": "123456",
+    "LOT": "ABC123",
+    "MNF": "Opuspac",
+    "BC": "123456789",
+    "_updatedAt": "2026-06-22T11:35:31.777Z"
+  },
+  "123456789": {
+    "MED_NAME": "Medication A",
+    "GTIN_CODE": "123456789",
+    "DESCRIPTION": "ABC123",
+    "CONCENTRATION": "Opuspac",
+    "_updatedAt": "2026-06-17T19:43:16.701Z"
+  }
+}

@@ -6,9 +6,109 @@
     "fileNamePattern": "*.csv",
     "useAuthentication": true,
     "username": "client",
-    "password": "enc:v1:aes-gcm:tODZTkGHXVOJhNZS:RKSWkdyk+YHiq04nhHm1GraD9UANG6Xfuw==",
+    "password": "enc:v1:aes-gcm:I92NDgdHQsJFP894:GFCGzBiuYt/breWJdmqHOKmiYeTuVupa2Q==",
     "useDomain": false,
     "domain": ""
   },
-  "parser": {}
+  "parser": {
+    "delimiter": ",",
+    "hasHeader": "Yes",
+    "quoteChar": "\"",
+    "escapeChar": "\"",
+    "dateFormat": "",
+    "decimalSeparator": "",
+    "emptyValue": "",
+    "columns": [
+      {
+        "name": "MedicationName",
+        "index": 0,
+        "dataType": "String"
+      },
+      {
+        "name": "ProductCode",
+        "index": 5,
+        "dataType": "String"
+      },
+      {
+        "name": "Lot",
+        "index": 2,
+        "dataType": "String"
+      },
+      {
+        "name": "Manufacturer",
+        "index": 3,
+        "dataType": "String"
+      },
+      {
+        "name": "BarCode",
+        "index": 4,
+        "dataType": "String"
+      }
+    ]
+  },
+  "mapping": [
+    {
+      "csvColumn": "MedicationName",
+      "index": 0,
+      "jsonTag": "MED2222",
+      "include": true
+    },
+    {
+      "csvColumn": "ProductCode",
+      "index": 5,
+      "jsonTag": "PC",
+      "include": true
+    },
+    {
+      "csvColumn": "Lot",
+      "index": 2,
+      "jsonTag": "LOT",
+      "include": true
+    },
+    {
+      "csvColumn": "Manufacturer",
+      "index": 3,
+      "jsonTag": "MNF",
+      "include": true
+    },
+    {
+      "csvColumn": "BarCode",
+      "index": 4,
+      "jsonTag": "BC",
+      "include": true
+    }
+  ],
+  "validation": [
+    {
+      "csvColumn": "MedicationName",
+      "jsonTag": "MED2222",
+      "required": true
+    },
+    {
+      "csvColumn": "ProductCode",
+      "jsonTag": "PC",
+      "required": true
+    },
+    {
+      "csvColumn": "Lot",
+      "jsonTag": "LOT",
+      "required": false
+    },
+    {
+      "csvColumn": "Manufacturer",
+      "jsonTag": "MNF",
+      "required": false
+    },
+    {
+      "csvColumn": "BarCode",
+      "jsonTag": "BC",
+      "required": true
+    }
+  ],
+  "persistence": {
+    "triggerMode": "manual",
+    "validationLevel": "superior"
+  },
+  "searchColumnIndex": 5,
+  "apiResp": {}
 }

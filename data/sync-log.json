@@ -1,0 +1,327 @@
+[
+  {
+    "id": "1781719578479-495930",
+    "timestamp": "2026-06-17T18:06:18.479Z",
+    "productCode": "1324143141",
+    "result": "ERROR",
+    "fields": null,
+    "error": "Connector not configured: no file detected. Run Test Connection first.",
+    "requestedBy": "operador.demo",
+    "confirmedBy": null
+  },
+  {
+    "id": "1781719803482-200585",
+    "timestamp": "2026-06-17T18:10:03.329Z",
+    "productCode": "36346636",
+    "result": "NOT_FOUND",
+    "fields": null,
+    "error": "",
+    "requestedBy": "operador.demo",
+    "confirmedBy": null
+  },
+  {
+    "id": "1781719863665-217750",
+    "timestamp": "2026-06-17T18:11:03.530Z",
+    "productCode": "123456789",
+    "result": "FOUND",
+    "fields": {
+      "Med_name": "Medication A",
+      "Gtin": "123456789",
+      "Desc": "ABC123",
+      "Cons": "Opuspac"
+    },
+    "error": "",
+    "requestedBy": "operador.demo",
+    "confirmedBy": "operador.demo"
+  },
+  {
+    "id": "1781719921301-893512",
+    "timestamp": "2026-06-17T18:12:01.155Z",
+    "productCode": "123456789",
+    "result": "FOUND",
+    "fields": {
+      "Med_name": "Medication A",
+      "Gtin": "123456789",
+      "Desc": "ABC123",
+      "Cons": "Opuspac"
+    },
+    "error": "",
+    "requestedBy": "operador.demo",
+    "confirmedBy": null
+  },
+  {
+    "id": "1781719924530-164774",
+    "timestamp": "2026-06-17T18:12:04.413Z",
+    "productCode": "123456789",
+    "result": "FOUND",
+    "fields": {
+      "Med_name": "Medication A",
+      "Gtin": "123456789",
+      "Desc": "ABC123",
+      "Cons": "Opuspac"
+    },
+    "error": "",
+    "requestedBy": "operador.demo",
+    "confirmedBy": null
+  },
+  {
+    "id": "1781719925927-690500",
+    "timestamp": "2026-06-17T18:12:05.810Z",
+    "productCode": "123456789",
+    "result": "FOUND",
+    "fields": {
+      "Med_name": "Medication A",
+      "Gtin": "123456789",
+      "Desc": "ABC123",
+      "Cons": "Opuspac"
+    },
+    "error": "",
+    "requestedBy": "operador.demo",
+    "confirmedBy": null
+  },
+  {
+    "id": "1781719928502-422872",
+    "timestamp": "2026-06-17T18:12:08.392Z",
+    "productCode": "1234567892",
+    "result": "NOT_FOUND",
+    "fields": null,
+    "error": "",
+    "requestedBy": "operador.demo",
+    "confirmedBy": null
+  },
+  {
+    "id": "1781719932013-973845",
+    "timestamp": "2026-06-17T18:12:11.899Z",
+    "productCode": "12345678923",
+    "result": "NOT_FOUND",
+    "fields": null,
+    "error": "",
+    "requestedBy": "operador.demo",
+    "confirmedBy": null
+  },
+  {
+    "id": "1781719941958-122168",
+    "timestamp": "2026-06-17T18:12:21.848Z",
+    "productCode": "PH00209",
+    "result": "NOT_FOUND",
+    "fields": null,
+    "error": "",
+    "requestedBy": "operador.demo",
+    "confirmedBy": null
+  },
+  {
+    "id": "1781720013042-346657",
+    "timestamp": "2026-06-17T18:13:32.923Z",
+    "productCode": "123456789",
+    "result": "FOUND",
+    "fields": {
+      "Med_name": "Medication A",
+      "Gtin": "123456789",
+      "Desc": "ABC123",
+      "Cons": "Opuspac"
+    },
+    "error": "",
+    "requestedBy": "operador.demo",
+    "confirmedBy": null
+  },
+  {
+    "id": "1781720104045-572721",
+    "timestamp": "2026-06-17T18:15:03.914Z",
+    "productCode": "123456789",
+    "result": "FOUND",
+    "fields": {
+      "Med_name": "Medication A",
+      "Gtin": "123456789",
+      "Desc": "ABC123",
+      "Cons": "Opuspac"
+    },
+    "error": "",
+    "requestedBy": "operador.demo",
+    "confirmedBy": "operador.demo"
+  },
+  {
+    "id": "1781720157554-463250",
+    "timestamp": "2026-06-17T18:15:57.422Z",
+    "productCode": "123456789",
+    "result": "FOUND",
+    "fields": {
+      "Med_name": "Medication A",
+      "Gtin": "123456789",
+      "Desc": "ABC123",
+      "Cons": "Opuspac"
+    },
+    "error": "",
+    "requestedBy": "operador.demo",
+    "confirmedBy": "lazaro"
+  },
+  {
+    "id": "1781720251510-672501",
+    "timestamp": "2026-06-17T18:17:31.378Z",
+    "productCode": "123456789",
+    "result": "FOUND",
+    "fields": {
+      "MED_NAME": "Medication A",
+      "GTIN_CODE": "123456789",
+      "DESCRIPTION": "ABC123",
+      "CONCENTRATION": "Opuspac"
+    },
+    "error": "",
+    "requestedBy": "operador.demo",
+    "confirmedBy": "PEPE"
+  },
+  {
+    "id": "1781721194733-684444",
+    "timestamp": "2026-06-17T18:32:49.085Z",
+    "productCode": "1234567893",
+    "result": "ERROR",
+    "fields": null,
+    "error": "No se pudo leer el archivo tras 3 intentos: SERVER NOT REACHABLE<br>Cannot connect to the network share.<br><br>Suggestions:<br>• Ensure the server is powered on<br>• Check the network connection<br>• Verify the path is correct (\\\\server\\share)<br>• Try pinging the server",
+    "requestedBy": "operador.demo",
+    "confirmedBy": null
+  },
+  {
+    "id": "1781721545318-936394",
+    "timestamp": "2026-06-17T18:38:40.075Z",
+    "productCode": "65416",
+    "result": "ERROR",
+    "fields": null,
+    "error": "No se pudo leer el archivo tras 3 intentos: SERVER NOT REACHABLE<br>Cannot connect to the network share.<br><br>Suggestions:<br>• Ensure the server is powered on<br>• Check the network connection<br>• Verify the path is correct (\\\\server\\share)<br>• Try pinging the server",
+    "requestedBy": "operador.demo",
+    "confirmedBy": null
+  },
+  {
+    "id": "1781721619046-802286",
+    "timestamp": "2026-06-17T18:39:53.800Z",
+    "productCode": "321321",
+    "result": "ERROR",
+    "fields": null,
+    "error": "No se pudo leer el archivo tras 3 intentos: SERVER NOT REACHABLE Cannot connect to the network share. Suggestions: • Ensure the server is powered on • Check the network connection • Verify the path is correct (\\\\server\\share) • Try pinging the server",
+    "requestedBy": "operador.demo",
+    "confirmedBy": null
+  },
+  {
+    "id": "1781725396702-454922",
+    "timestamp": "2026-06-17T19:43:16.571Z",
+    "productCode": "123456789",
+    "result": "FOUND",
+    "fields": {
+      "MED_NAME": "Medication A",
+      "GTIN_CODE": "123456789",
+      "DESCRIPTION": "ABC123",
+      "CONCENTRATION": "Opuspac"
+    },
+    "error": "",
+    "requestedBy": "operador.demo",
+    "confirmedBy": "juan"
+  },
+  {
+    "id": "1782048522704-23462",
+    "timestamp": "2026-06-21T13:28:17.482Z",
+    "productCode": "1234564632",
+    "result": "ERROR",
+    "fields": null,
+    "error": "No se pudo leer el archivo tras 3 intentos: SERVER NOT REACHABLE Cannot connect to the network share. Suggestions: • Ensure the server is powered on • Check the network connection • Verify the path is correct (\\\\server\\share) • Try pinging the server",
+    "requestedBy": "operador.demo",
+    "confirmedBy": null
+  },
+  {
+    "id": "1782127819368-946790",
+    "timestamp": "2026-06-22T11:30:19.123Z",
+    "productCode": "13414341431",
+    "result": "NOT_FOUND",
+    "fields": null,
+    "error": "",
+    "requestedBy": "operador.demo",
+    "confirmedBy": null
+  },
+  {
+    "id": "1782127860062-319914",
+    "timestamp": "2026-06-22T11:30:59.921Z",
+    "productCode": "123456789",
+    "result": "NOT_FOUND",
+    "fields": null,
+    "error": "",
+    "requestedBy": "operador.demo",
+    "confirmedBy": null
+  },
+  {
+    "id": "1782127907947-837194",
+    "timestamp": "2026-06-22T11:31:47.761Z",
+    "productCode": "123456",
+    "result": "FOUND",
+    "fields": {
+      "MED": "Medication A",
+      "PC": "123456",
+      "LOT": "ABC123",
+      "MNF": "Opuspac",
+      "BC": "123456789"
+    },
+    "error": "",
+    "requestedBy": "operador.demo",
+    "confirmedBy": null
+  },
+  {
+    "id": "1782127949974-670504",
+    "timestamp": "2026-06-22T11:32:29.847Z",
+    "productCode": "123456",
+    "result": "VALIDATION_FAILED",
+    "fields": {
+      "MED2222": "Medication A",
+      "PC": "123456",
+      "LOT": "ABC123",
+      "MNF": "Opuspac",
+      "BC": "123456789"
+    },
+    "error": "Product found in CSV but with incomplete data — field [MED] is empty",
+    "requestedBy": "operador.demo",
+    "confirmedBy": null
+  },
+  {
+    "id": "1782127985449-596412",
+    "timestamp": "2026-06-22T11:33:05.250Z",
+    "productCode": "123456",
+    "result": "FOUND",
+    "fields": {
+      "MED2222": "Medication A",
+      "PC": "123456",
+      "LOT": "ABC123",
+      "MNF": "Opuspac",
+      "BC": "123456789"
+    },
+    "error": "",
+    "requestedBy": "operador.demo",
+    "confirmedBy": null
+  },
+  {
+    "id": "1782128088872-443858",
+    "timestamp": "2026-06-22T11:34:48.723Z",
+    "productCode": "123456",
+    "result": "FOUND",
+    "fields": {
+      "MED2222": "Medication A",
+      "PC": "123456",
+      "LOT": "ABC123",
+      "MNF": "Opuspac",
+      "BC": "123456789"
+    },
+    "error": "",
+    "requestedBy": "operador.demo",
+    "confirmedBy": "operador.demo"
+  },
+  {
+    "id": "1782128131778-624604",
+    "timestamp": "2026-06-22T11:35:31.610Z",
+    "productCode": "123456",
+    "result": "FOUND",
+    "fields": {
+      "MED2222": "Medication A",
+      "PC": "123456",
+      "LOT": "ABC123",
+      "MNF": "Opuspac",
+      "BC": "123456789"
+    },
+    "error": "",
+    "requestedBy": "operador.demo",
+    "confirmedBy": "CAPELLAZZO"
+  }
+]
