@@ -24,9 +24,13 @@ class CSVParser {
 
       logs.push({ type: 'success', message: 'File loaded successfully' });
 
-      // 2. Detect encoding
+      // 2. Encoding (detectada por el backend a partir de los bytes crudos)
       const encoding = this.detectEncoding(fileContent);
-      logs.push({ type: 'info', message: `Encoding detected: ${encoding}` });
+      if (encoding.startsWith('UTF-8')) {
+        logs.push({ type: 'success', message: `Encoding detected: ${encoding}` });
+      } else {
+        logs.push({ type: 'warning', message: `Encoding detected: ${encoding} — converted to UTF-8 automatically` });
+      }
 
       // 3. Split lines
       const lines = fileContent.split('\n').filter(line => line.trim());
@@ -265,8 +269,9 @@ class CSVParser {
    * Detect file encoding
    */
   static detectEncoding(content) {
-    if (content.charCodeAt(0) === 0xFEFF) return 'UTF-8 BOM';
-    if (content.includes('€') || content.includes('©')) return 'UTF-8';
+    // El backend lee los bytes crudos, detecta la codificación y envía el texto ya convertido
+    if (this.lastEncoding) return this.lastEncoding;
+    if (content.charCodeAt(0) === 0xFEFF) return 'UTF-8 (BOM)';
     return 'UTF-8';
   }
 
@@ -373,6 +378,7 @@ class CSVParser {
       }
 
       const data = await response.json();
+      this.lastEncoding = data.encoding || null;
       return data.content;
     } catch (error) {
       console.error('[CSVParser] Read file error:', error);

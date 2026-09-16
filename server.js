@@ -560,7 +560,7 @@ app.post('/api/connector/read-file', async (req, res) => {
       return res.status(400).json({ error: { message: 'Failed to read file' } });
     }
 
-    res.json({ content: fileContent, filename: detectResult.file, size: fileContent.length, encoding: 'UTF-8' });
+    res.json({ content: fileContent, filename: detectResult.file, size: fileContent.length, encoding: handler.lastEncoding || 'UTF-8' });
   } catch (error) {
     console.error('[API ERROR]', error.message);
     res.status(500).json({ error: error.message });

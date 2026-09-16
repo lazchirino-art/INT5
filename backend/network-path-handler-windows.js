@@ -10,6 +10,23 @@ import { promisify } from 'util';
 
 const execAsync = promisify(exec);
 
+/**
+ * Decodifica los bytes crudos del archivo detectando su codificación.
+ * - UTF-8 con BOM (Excel "CSV UTF-8")    → se quita el BOM
+ * - UTF-8 sin BOM                         → tal cual
+ * - No es UTF-8 válido                    → Windows-1252 (Excel "CSV" en Windows en español)
+ */
+function decodeFileBuffer(buf) {
+  if (buf.length >= 3 && buf[0] === 0xEF && buf[1] === 0xBB && buf[2] === 0xBF) {
+    return { text: buf.subarray(3).toString('utf8'), encoding: 'UTF-8 (BOM)' };
+  }
+  try {
+    return { text: new TextDecoder('utf-8', { fatal: true }).decode(buf), encoding: 'UTF-8' };
+  } catch {
+    return { text: new TextDecoder('windows-1252').decode(buf), encoding: 'Windows-1252' };
+  }
+}
+
 class NetworkPathHandlerWindows {
   constructor(credentialCrypto = null) {
     this.logs = [];
@@ -300,14 +317,18 @@ class NetworkPathHandlerWindows {
         command = `cmd /c type "${fullPath}"`;
       }
 
-      const { stdout, stderr } = await execAsync(command, { maxBuffer: 50 * 1024 * 1024 });
+      // Bytes crudos: la codificación se detecta aquí en vez de forzar UTF-8 al leer stdout
+      const { stdout, stderr } = await execAsync(command, { maxBuffer: 50 * 1024 * 1024, encoding: 'buffer' });
 
-      if (stderr && stderr.trim()) {
-        this.addLog(`Warning: ${stderr}`);
+      const stderrText = stderr ? stderr.toString().trim() : '';
+      if (stderrText) {
+        this.addLog(`Warning: ${stderrText}`);
       }
 
-      this.addLog(`File read successfully: ${filename}`);
-      return stdout;
+      const { text, encoding } = decodeFileBuffer(stdout);
+      this.lastEncoding = encoding;
+      this.addLog(`File read successfully: ${filename} (encoding: ${encoding})`);
+      return text;
 
     } catch (error) {
       this.addLog(`Error reading file: ${error.message}`);
