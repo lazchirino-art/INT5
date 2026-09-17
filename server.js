@@ -570,7 +570,10 @@ app.post('/api/connector/read-file', async (req, res) => {
     });
 
     if (detectResult.status !== 'READY' || !detectResult.file) {
-      return res.status(400).json({ error: { message: 'File not found' }, logs: detectResult.logs });
+      const reason = String(detectResult.logs[detectResult.logs.length - 1] || 'File not found')
+        .replace(/^Error: /, '')
+        .replace(/<br\s*\/?>/gi, ' ');
+      return res.status(400).json({ error: { message: reason }, logs: detectResult.logs });
     }
 
     // detect() ya comprobó que la contraseña se descifra correctamente

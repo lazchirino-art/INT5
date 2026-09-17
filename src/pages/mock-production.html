@@ -150,7 +150,7 @@
 <script>
 const $ = id => document.getElementById(id);
 let pending = null;
-function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
 function showBanner(type,ico,html){ $('banner').innerHTML = `<div class="banner ${type}"><span class="ico">${ico}</span><div>${html}</div></div>`; }
 function clearProduct(){ $('panels').style.display='none'; $('rawJson').textContent=''; $('readable').innerHTML=''; }
@@ -263,7 +263,8 @@ async function loadLog(){
 }
 
 $('goBtn').addEventListener('click', ()=>importProduct());
-$('code').addEventListener('keydown', e=>{ if(e.key==='Enter') importProduct(); });
+// Un escáner envía Enter: ignorarlo mientras hay una confirmación abierta
+$('code').addEventListener('keydown', e=>{ if(e.key==='Enter' && !pending) importProduct(); });
 $('refreshLog').addEventListener('click', loadLog);
 
 loadSearchColumn();

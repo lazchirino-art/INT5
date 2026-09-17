@@ -59,7 +59,6 @@ class ParserUI {
     const parserConfig = this.getParserConfig();
     const userColumns = this.getUserColumns();
     const connectorConfig = await this.getConnectorConfig();
-	console.log('🔥 CONNECTOR CONFIG:', connectorConfig);
     // Validation: connector config exists
     if (!connectorConfig) {
       console.error('[ParserUI] No connector config found');
@@ -93,6 +92,12 @@ class ParserUI {
       this.parserState.columnNames = result.columnNames || [];
       this.parserState.columnCount = result.columnCount || 0;
       this.parserState.preview = result.preview || [];
+
+      if (result.status === 'FAILED' && (!result.fileColumnNames || result.fileColumnNames.length === 0)) {
+        this.renderLogs(result.logs);
+        this.updateStatusDisplay('FAILED');
+        return;
+      }
 
       // Validate user columns against file structure
       // Pass hasHeader to skip name comparison if hasHeader is 'No'
@@ -142,18 +147,10 @@ class ParserUI {
       this.renderLogs(finalLogs);
       this.updateStatusDisplay(result.status);
 
-      // Debug logging
-      console.log('[ParserUI] Result:', result);
-      console.log('[ParserUI] Preview:', result.preview);
-      console.log('[ParserUI] FileColumnNames:', result.fileColumnNames);
-      console.log('[ParserUI] UserColumns:', userColumns);
-      console.log('[ParserUI] ColumnValidation:', columnValidation);
-      console.log('[ParserUI] HasHeader:', parserConfig.hasHeader);
-
-      // Show preview and enable save if no column errors
+      // Show preview if no column errors; Save only when the whole check is VALID
       if (columnValidation.errors.length === 0) {
         if (saveButton) {
-          saveButton.disabled = false;
+          saveButton.disabled = result.status !== 'VALID';
         }
         if (result.preview && result.preview.length > 0) {
           this.showPreview(result.preview, userColumns);
@@ -244,11 +241,6 @@ class ParserUI {
   }
 
   /**
-   * Get parser configuration from form inputs
-   */
-
-  /**
-  /**
    * Update column names when hasHeader changes
    * Logic:
    * - If changing to 'No': Generate auto column names based on column index (Column0, Column1, etc.)
@@ -319,7 +311,6 @@ class ParserUI {
 
       const data = await response.json();
       if (data.status === 'SUCCESS' && data.config?.connection) {
-        console.log('[ParserUI] Connector config loaded from backend:', data.config.connection);
         return data.config.connection;
       }
       return null;
@@ -340,18 +331,12 @@ class ParserUI {
     logLines.innerHTML = '';
 
     logs.forEach(log => {
-      const line = document.createElement('div');
-      line.className = `log-line log-${log.type}`;
-
-      // Select icon based on log type
-      let icon = '';
+      let icon = 'ℹ';
       if (log.type === 'success') icon = '✔';
       else if (log.type === 'warning') icon = '⚠';
       else if (log.type === 'error') icon = '❌';
-      else icon = 'ℹ';
 
-      line.innerHTML = `<span class="log-icon">${icon}</span><span class="log-message">${log.message}</span>`;
-      logLines.appendChild(line);
+      logLines.appendChild(this.createLogLine(log.type, icon, log.message));
     });
   }
 
@@ -381,10 +366,24 @@ class ParserUI {
     if (!logLines) return;
 
     logLines.innerHTML = '';
+    logLines.appendChild(this.createLogLine('error', '❌', message));
+  }
+
+  /**
+   * Línea de log construida con textContent: los mensajes incluyen cabeceras
+   * y nombres leídos del CSV y no deben interpretarse como HTML.
+   */
+  static createLogLine(type, icon, message) {
     const line = document.createElement('div');
-    line.className = 'log-line log-error';
-    line.innerHTML = `<span class="log-icon">❌</span><span class="log-message">${message}</span>`;
-    logLines.appendChild(line);
+    line.className = `log-line ${type}`;
+    const iconSpan = document.createElement('span');
+    iconSpan.className = 'log-icon';
+    iconSpan.textContent = icon;
+    const messageSpan = document.createElement('span');
+    messageSpan.className = 'log-message';
+    messageSpan.textContent = message;
+    line.append(iconSpan, messageSpan);
+    return line;
   }
 
   /**
@@ -461,8 +460,7 @@ class ParserUI {
     };
 
     try {
-      console.log('[ParserUI] Saving parser configuration to backend...', config);
-      
+
       // Save to backend (config/app-config.json)
       const response = await fetch('/api/config/save', {
         method: 'POST',
@@ -490,85 +488,82 @@ class ParserUI {
     }
   }
 
-  /**
-   * Populate Mapping table from Parser configuration
-   * Called after Parser configuration is saved
-   */
-  static async populateMappingTableFromParser(columns) {
-    try {
-      console.log('[ParserUI] Populating Mapping table from Parser configuration...');
-
-      const mappingBody = document.getElementById('mappingBody');
-      if (!mappingBody) {
-        console.warn('[ParserUI] Mapping table not found');
-        return;
-      }
-
-      // Clear existing rows
-      mappingBody.innerHTML = '';
-
-      // Create row for each column
-      if (columns && Array.isArray(columns)) {
-        columns.forEach((col) => {
-          const row = document.createElement('tr');
-          row.innerHTML = `
-            <td><input type="text" value="${col.name}" disabled></td>
-            <td><input type="number" value="${col.index}" disabled></td>
-            <td><input type="text" placeholder="system_field_name" class="system-field"></td>
-            <td><input type="text" placeholder="transformation()" class="transformation"></td>
-            <td><span class="delete-btn" onclick="removeRow(this)">x</span></td>
-          `;
-          mappingBody.appendChild(row);
-        });
-
-        console.log(`[ParserUI] Mapping table populated with ${columns.length} rows`);
-      }
-    } catch (error) {
-      console.error('[ParserUI] Error populating mapping table:', error);
-    }
-  }
-
   // ==================== COLUMN MANAGEMENT ====================
   /**
+   * Crea una fila de la tabla de columnas.
+   * Cualquier cambio en la fila invalida el Check anterior (hay que volver a validar).
+   */
+  static createColumnRow({ name = '', index = 0, dataType = 'String' }, autoNamed) {
+    const row = document.createElement('tr');
+
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.placeholder = 'Column name';
+    nameInput.value = name;
+    nameInput.disabled = autoNamed;
+
+    const indexInput = document.createElement('input');
+    indexInput.type = 'number';
+    indexInput.min = '0';
+    indexInput.placeholder = 'Index';
+    indexInput.value = index;
+
+    const typeSelect = document.createElement('select');
+    ['String', 'Number', 'Date'].forEach(type => {
+      const option = document.createElement('option');
+      option.value = type;
+      option.textContent = type;
+      option.selected = type === dataType;
+      typeSelect.appendChild(option);
+    });
+
+    const deleteButton = document.createElement('span');
+    deleteButton.className = 'delete-btn';
+    deleteButton.textContent = '✖';
+    deleteButton.addEventListener('click', () => this.removeParserColumn(deleteButton));
+
+    [nameInput, indexInput, typeSelect, deleteButton].forEach(element => {
+      const cell = document.createElement('td');
+      cell.appendChild(element);
+      row.appendChild(cell);
+    });
+
+    [nameInput, indexInput, typeSelect].forEach(input => {
+      input.addEventListener('input', () => this.onColumnsChanged());
+      input.addEventListener('change', () => this.onColumnsChanged());
+    });
+
+    return row;
+  }
+
+  static onColumnsChanged() {
+    this.resetParserState();
+    this.updateCheckButtonState();
+  }
+
+  /**
    * Add new column row to table
-   * If hasHeader='No', automatically generates column name and disables editing
+   * If hasHeader='No', automatically generates a unique column name and disables editing
    */
   static addParserColumn() {
     const columnsBody = document.getElementById('columnsBody');
     if (!columnsBody) return;
 
-    // Calculate next index based on current row count
-    const rowCount = columnsBody.querySelectorAll('tr').length;
-    const nextIndex = rowCount;
+    const rows = columnsBody.querySelectorAll('tr');
+    const isAutoNaming = document.getElementById('parserHasHeader')?.value === 'No';
 
-    // Check current hasHeader state
-    const hasHeader = document.getElementById('parserHasHeader')?.value;
-    const isAutoNaming = hasHeader === 'No';
-    const columnName = isAutoNaming ? `Column${nextIndex}` : '';
-    const isDisabled = isAutoNaming ? 'disabled' : '';
+    // Nombre ColumnN no repetido aunque se hayan borrado filas intermedias
+    const usedNumbers = [...rows]
+      .map(row => /^Column(\d+)$/.exec(row.querySelector('input[type="text"]')?.value || ''))
+      .filter(Boolean)
+      .map(match => parseInt(match[1], 10));
+    const nextNumber = usedNumbers.length ? Math.max(...usedNumbers) + 1 : rows.length;
 
-    // Create new row
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td><input type="text" placeholder="Column name" value="${columnName}" ${isDisabled} /></td>
-      <td><input type="number" min="0" value="${nextIndex}" placeholder="Index" /></td>
-      <td><select>
-        <option value="String">String</option>
-        <option value="Number">Number</option>
-        <option value="Date">Date</option>
-      </select></td>
-      <td><span class="delete-btn" onclick="ParserUI.removeParserColumn(this)">✖</span></td>
-    `;
-    columnsBody.appendChild(row);
-
-    // Add listeners to update button state on input change
-    const inputs = row.querySelectorAll('input, select');
-    inputs.forEach(input => {
-      input.addEventListener('input', () => this.updateCheckButtonState());
-      input.addEventListener('change', () => this.updateCheckButtonState());
-    });
-
-    this.updateCheckButtonState();
+    columnsBody.appendChild(this.createColumnRow(
+      { name: isAutoNaming ? `Column${nextNumber}` : '', index: rows.length },
+      isAutoNaming
+    ));
+    this.onColumnsChanged();
   }
 
   /**
@@ -576,7 +571,7 @@ class ParserUI {
    */
   static removeParserColumn(button) {
     button.closest('tr').remove();
-    this.updateCheckButtonState();
+    this.onColumnsChanged();
   }
 
   // ==================== BUTTON STATE ====================
@@ -611,15 +606,12 @@ class ParserUI {
    * Check if connector configuration is ready
    */
   static isConnectorReady() {
-    const statusDiv = document.getElementById('connectionStatus');
     const saveDiv = document.getElementById('saveStatus');
+    if (!saveDiv) return false;
 
-    if (!statusDiv || !saveDiv) return false;
-
-    const statusText = statusDiv.textContent;
-    const saveText = saveDiv.textContent;
-
-    return statusText.includes('READY') && saveText.includes('SAVED');
+    // El Check lee el archivo con la conexión GUARDADA: exige que esté guardada
+    // y sin cambios pendientes en el formulario ("SAVE: NOT SAVED" también contiene "SAVED")
+    return saveDiv.textContent.trim() === 'SAVE: SAVED';
   }
 
   // ==================== STATE MANAGEMENT ====================
@@ -674,7 +666,6 @@ class ParserUI {
       }
 
       const parserConfig = data.config.parser;
-      console.log('[ParserUI] Parser configuration loaded:', parserConfig);
 
       // 1. Render parsing settings
       const delimiterSelect = document.getElementById('parserDelimiter');
@@ -720,40 +711,14 @@ class ParserUI {
       console.log('[ParserUI] Parsing settings loaded');
 
       // 2. Render Expected Columns table
-      if (parserConfig.columns && Array.isArray(parserConfig.columns)) {
+      if (Array.isArray(parserConfig.columns)) {
         const tbody = document.getElementById('columnsBody');
         if (tbody) {
-          tbody.innerHTML = ''; // Clear existing rows
-
-          parserConfig.columns.forEach((col) => {
-            const row = document.createElement('tr');
-            // Disable name input if hasHeader is 'No' (auto-generated names)
-            const isDisabled = parserConfig.hasHeader === 'No' ? 'disabled' : '';
-            row.innerHTML = `
-              <td><input type="text" value="${col.name}" placeholder="column_name" ${isDisabled}></td>
-              <td><input type="number" value="${col.index}" placeholder="index" min="0"></td>
-              <td>
-                <select>
-                  <option value="String" ${col.dataType === 'String' ? 'selected' : ''}>String</option>
-                  <option value="Date" ${col.dataType === 'Date' ? 'selected' : ''}>Date</option>
-                  <option value="Number" ${col.dataType === 'Number' ? 'selected' : ''}>Number</option>
-                </select>
-              </td>
-              <td><span class="delete-btn" onclick="removeRow(this)">x</span></td>
-            `;
-            tbody.appendChild(row);
-          });
-
-          console.log(`[ParserUI] Loaded ${parserConfig.columns.length} columns`);
+          tbody.innerHTML = '';
+          const autoNamed = parserConfig.hasHeader === 'No';
+          parserConfig.columns.forEach(col => tbody.appendChild(this.createColumnRow(col, autoNamed)));
         }
       }
-
-      // Add event listeners to new inputs for state management
-      const inputs = document.querySelectorAll('#columnsBody input, #columnsBody select');
-      inputs.forEach(input => {
-        input.addEventListener('input', () => this.updateCheckButtonState());
-        input.addEventListener('change', () => this.updateCheckButtonState());
-      });
 
       // Re-evaluate the Check button now that columns are loaded
       this.updateCheckButtonState();
@@ -772,7 +737,3 @@ class ParserUI {
 // Export to global scope IMMEDIATELY (before DOMContentLoaded)
 window.ParserUI = ParserUI;
 
-// Initialize when DOM is ready
-document.addEventListener('DOMContentLoaded', () => {
-  ParserUI.init();
-});

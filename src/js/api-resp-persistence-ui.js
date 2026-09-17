@@ -5,7 +5,7 @@
  * Sync log shows entries with source === 'apiResp'.
  *
  * Config saved under apiResp.persistence.
- * Log read from GET /api/sync-log (filtered client-side by source).
+ * Log read from GET /api/sync-log?source=apiResp.
  */
 
 class ApiRespPersistenceUI {
@@ -14,9 +14,7 @@ class ApiRespPersistenceUI {
 
   static init() {
     const saveBtn    = document.getElementById('arSavePersistenceBtn');
-    const refreshBtn = document.getElementById('arSyncLogRefresh');
     if (saveBtn)    saveBtn.addEventListener('click',   () => ApiRespPersistenceUI.saveConfig());
-    if (refreshBtn) refreshBtn.addEventListener('click', () => ApiRespPersistenceUI.loadLog(1));
     console.log('[ApiRespPersistenceUI] Initialized');
   }
 
@@ -34,8 +32,10 @@ class ApiRespPersistenceUI {
       const p = data?.config?.apiResp?.persistence;
       if (p?.triggerMode) {
         document.getElementById('arTriggerMode').value = p.triggerMode;
+        ApiRespPersistenceUI._setStatus('SAVED', 'saved');
+      } else {
+        ApiRespPersistenceUI._setStatus('NOT SAVED', 'idle');
       }
-      ApiRespPersistenceUI._setStatus('SAVED', 'saved');
     } catch (err) {
       ApiRespPersistenceUI._setStatus('LOAD ERROR', 'error');
     }
@@ -76,15 +76,15 @@ class ApiRespPersistenceUI {
 
     try {
       const limit    = 20;
-      const response = await fetch(`/api/sync-log?page=${page}&limit=${limit}`);
+      const response = await fetch(`/api/sync-log?page=${page}&limit=${limit}&source=apiResp`);
       const data     = await response.json();
 
       if (!response.ok) {
         throw new Error(data.error || `HTTP ${response.status}`);
       }
 
-      // Filter client-side to show only apiResp entries
-      const entries = (data.entries || []).filter(e => e.source === 'apiResp');
+      // El backend ya filtra por origen: la paginación cuenta solo entradas API-RESP
+      const entries = data.entries || [];
 
       if (entries.length === 0) {
         if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="sync-log-empty">No API-RESP sync log entries yet.</td></tr>';

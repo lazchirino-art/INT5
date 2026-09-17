@@ -107,11 +107,21 @@ class MappingUI {
       }
     }
 
-    // Restore status badge based on whether mapping was already saved
-    if (appConfig.mapping && appConfig.mapping.length > 0) {
-      MappingUI._setStatus('SAVED', 'saved');
-    } else {
+    // Estado: guardado solo si el mapping guardado corresponde a las columnas ACTUALES del Parser
+    const savedMapping = Array.isArray(appConfig.mapping) ? appConfig.mapping : [];
+    const savedIdx = appConfig.searchColumnIndex;
+    const mappingInSync =
+      savedMapping.length === parserColumns.length &&
+      parserColumns.every(col => savedMap[col.name] && savedMap[col.name].index === col.index);
+    const searchInSync = parserColumns.some(col => col.index === savedIdx);
+
+    if (savedMapping.length === 0) {
       MappingUI._setStatus('NOT SAVED', 'idle');
+    } else if (!mappingInSync || !searchInSync) {
+      // El Parser cambió después de guardar el Mapping: producción usaría datos desfasados
+      MappingUI._setStatus('OUTDATED — PARSER CHANGED, SAVE AGAIN', 'error');
+    } else {
+      MappingUI._setStatus('SAVED', 'saved');
     }
 
     return true;

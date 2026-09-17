@@ -27,7 +27,7 @@
             <select id="connectionType" onchange="handleConnectionTypeChange()">
                 <option value="">Select connection type</option>
                 <option value="networkPath">Network Path</option>
-                <option value="sftp">SFTP</option>
+                <option value="sftp" disabled>SFTP (not available yet)</option>
             </select>
         </div>
 
@@ -144,7 +144,7 @@
                 <div class="parser-inputs">
                     <div class="form-group">
                         <label>Delimiter *</label>
-                        <select id="parserDelimiter" onchange="onParserInputChange()">
+                        <select id="parserDelimiter">
                             <option value=",">,</option>
                             <option value=";">;</option>
                             <option value="|">|</option>
@@ -154,7 +154,7 @@
 
                     <div class="form-group">
                         <label>Has Header *</label>
-                        <select id="parserHasHeader" onchange="onParserInputChange()">
+                        <select id="parserHasHeader">
                             <option value="Yes">Yes</option>
                             <option value="No">No</option>
                         </select>
@@ -162,27 +162,27 @@
 
                     <div class="form-group">
                         <label>Quote Character</label>
-                        <input type="text" id="parserQuoteChar" value='"' maxlength="1" onchange="onParserInputChange()">
+                        <input type="text" id="parserQuoteChar" value='"' maxlength="1">
                     </div>
 
                     <div class="form-group">
                         <label>Escape Character</label>
-                        <input type="text" id="parserEscapeChar" value='"' maxlength="1" onchange="onParserInputChange()">
+                        <input type="text" id="parserEscapeChar" value='"' maxlength="1">
                     </div>
 
                     <div class="form-group">
                         <label>Date Format</label>
-                        <input type="text" id="parserDateFormat" placeholder="yyyy-MM-dd" onchange="onParserInputChange()">
+                        <input type="text" id="parserDateFormat" placeholder="yyyy-MM-dd">
                     </div>
 
                     <div class="form-group">
                         <label>Decimal Separator</label>
-                        <input type="text" id="parserDecimalSeparator" placeholder="." maxlength="1" onchange="onParserInputChange()">
+                        <input type="text" id="parserDecimalSeparator" placeholder="." maxlength="1">
                     </div>
 
                     <div class="form-group">
                         <label>Empty Value Representation</label>
-                        <input type="text" id="parserEmptyValue" placeholder="NULL, N/A, etc." onchange="onParserInputChange()">
+                        <input type="text" id="parserEmptyValue" placeholder="NULL, N/A, etc.">
                     </div>
                 </div>
 
@@ -365,7 +365,6 @@
 });
 
 </script>
-<script src="../js/app-local-secret.js"></script>
 <script src="../js/credential-crypto.js"></script>
 <script src="../js/network-path-client.js"></script>
 <script src="../js/config-loader.js"></script>

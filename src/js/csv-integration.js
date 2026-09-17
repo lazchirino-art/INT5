@@ -1,31 +1,27 @@
-// Connection test state (REMOVED - now uses real backend)
-// const networkConnectionTestState = { ... };
-
-const sftpConnectionTestState = {
-    hostResolved: true,
-    serverConnected: true,
-    authenticated: true,
-    remotePathAccessible: true,
-    fileCheckError: false,
-    matchedFileCount: 1
-};
-
 const logIcon = {
     success: '✓',
     error: '✗',
     warning: '⚠'
 };
 
-const connectionStorageKey = 'menuCsvInt.connectionConfig';
-
-// Client to connect with backend
+// Client to connect with backend (misma origen: funciona con cualquier PORT)
 let networkPathClient = null;
 
 function initializeNetworkPathClient() {
     if (!networkPathClient) {
-        networkPathClient = new NetworkPathClient('http://localhost:3000');
+        networkPathClient = new NetworkPathClient();
     }
     return networkPathClient;
+}
+
+/** Escapa texto para insertarlo como HTML. */
+function escapeHtml(text) {
+    return String(text ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }
 
 function openTab(index) {
@@ -69,7 +65,6 @@ function handleConnectionTypeChange() {
     sftpFields.classList.toggle('active', connectionType === 'sftp');
     connectionLog.classList.toggle('active', connectionType !== '');
     resetConnectionLog();
-    setSaveButtonsEnabled(false);
 
     if (connectionType === 'sftp') {
         handleSftpAuthTypeChange();
@@ -185,7 +180,6 @@ function validateNetworkConnectionConfig(config) {
 async function testNetworkConnection() {
     const config = getNetworkConnectionConfig();
     const lines = [];
-    let status = 'READY';
 
     // Frontend validation - block before API call
     const validation = validateNetworkConnectionConfig(config);
@@ -293,10 +287,6 @@ async function getCurrentConnectionConfigForStorage() {
     return CredentialCrypto.prepareConnectionConfigForStorage(config);
 }
 
-async function getConnectionConfigForRuntime(storedConfig) {
-    return CredentialCrypto.prepareConnectionConfigForRuntime(storedConfig);
-}
-
 async function saveCurrentConnectionConfig() {
     setSaveStatus('saving', 'SAVE: SAVING...');
 
@@ -308,20 +298,11 @@ async function saveCurrentConnectionConfig() {
 
         await persistConfiguration(appConfig);
         setSaveStatus('saved', 'SAVE: SAVED');
+        if (window.ParserUI) ParserUI.updateCheckButtonState();
     } catch (error) {
         setSaveStatus('failed', 'SAVE: SAVE ERROR');
         renderConnectionLog([createLogLine('error', error.message)], 'FAILED');
     }
-}
-
-async function loadStoredConnectionConfigForRuntime() {
-    const appConfig = await loadPersistedConfiguration();
-
-    if (!appConfig?.connection) {
-        return null;
-    }
-
-    return getConnectionConfigForRuntime(appConfig.connection);
 }
 
 async function persistConfiguration(config) {
@@ -367,107 +348,10 @@ function setSaveStatus(status, message) {
     saveStatus.textContent = message;
 }
 
-function validateSftpConnectionConfig(config) {
-    const errors = [];
-
-    if (!config.host) {
-        errors.push('Host is required');
-    }
-
-    if (!config.port || config.port < 1 || config.port > 65535) {
-        errors.push('Port must be between 1 and 65535');
-    }
-
-    if (!config.username) {
-        errors.push('Username is required');
-    }
-
-    if (config.authType === 'password' && !config.password) {
-        errors.push('Password is required');
-    }
-
-    if (config.authType === 'privateKey' && !config.privateKey) {
-        errors.push('Private Key is required');
-    }
-
-    if (config.authType === 'password' && config.privateKey) {
-        errors.push('Password and Private Key cannot be used at the same time');
-    }
-
-    if (config.authType === 'privateKey' && config.password) {
-        errors.push('Private Key and Password cannot be used at the same time');
-    }
-
-    if (!config.remotePath) {
-        errors.push('Remote Path is required');
-    }
-
-    if (!config.fileNamePattern) {
-        errors.push('File Name Pattern is required');
-    }
-
-    return errors;
-}
-
 function testSftpConnection() {
-    const config = getSftpConnectionConfig();
-    const lines = [createPlainLogLine('Testing connection...')];
-    const validationErrors = validateSftpConnectionConfig(config);
-    let status = 'READY';
-
-    if (validationErrors.length > 0) {
-        validationErrors.forEach(error => {
-            lines.push(createLogLine('error', error));
-        });
-        renderConnectionLog(lines, 'FAILED');
-        setSaveButtonsEnabled(false);
-        return;
-    }
-
-    if (!sftpConnectionTestState.hostResolved) {
-        lines.push(createLogLine('error', 'Cannot resolve host'));
-        status = 'FAILED';
-    } else {
-        lines.push(createLogLine('success', 'Resolving host...'));
-    }
-
-    if (status !== 'FAILED' && !sftpConnectionTestState.serverConnected) {
-        lines.push(createLogLine('error', `Connection timeout (port ${config.port})`));
-        status = 'FAILED';
-    } else if (status !== 'FAILED') {
-        lines.push(createLogLine('success', `Connecting to server (port ${config.port})...`));
-    }
-
-    if (status !== 'FAILED' && !sftpConnectionTestState.authenticated) {
-        lines.push(createLogLine('error', 'Authentication failed'));
-        status = 'FAILED';
-    } else if (status !== 'FAILED') {
-        lines.push(createLogLine('success', 'Authentication successful'));
-    }
-
-    if (status !== 'FAILED' && !sftpConnectionTestState.remotePathAccessible) {
-        lines.push(createLogLine('error', 'Remote path not found'));
-        status = 'FAILED';
-    } else if (status !== 'FAILED') {
-        lines.push(createLogLine('success', 'Remote path accessible'));
-    }
-
-    if (status !== 'FAILED') {
-        lines.push(createLogLine('success', `Checking file (${config.fileNamePattern})...`));
-
-        if (sftpConnectionTestState.fileCheckError) {
-            lines.push(createLogLine('error', 'File not found'));
-            status = 'FAILED';
-        } else if (sftpConnectionTestState.matchedFileCount > 0) {
-            lines.push(createLogLine('success', `File found (${sftpConnectionTestState.matchedFileCount})`));
-        } else {
-            lines.push(createLogLine('warning', 'No files found'));
-            status = 'PARTIAL';
-        }
-    }
-
-    renderConnectionLog(lines, status);
-    setSaveButtonsEnabled(status === 'READY');
+    // SFTP aún no está implementado en el backend: no se permite guardarlo
+    renderConnectionLog([createLogLine('error', 'SFTP is not available yet. Use Network Path.')], 'FAILED');
+    setSaveButtonsEnabled(false);
 }
 
 function resetConnectionLog() {
@@ -476,6 +360,24 @@ function resetConnectionLog() {
     document.getElementById('connectionStatus').textContent = 'STATUS: NOT TESTED';
     setSaveStatus('', 'SAVE: NOT SAVED');
     setSaveButtonsEnabled(false);
+    if (window.ParserUI) ParserUI.updateCheckButtonState();
+}
+
+/**
+ * Cualquier cambio en los campos del conector invalida la prueba y el guardado:
+ * hay que volver a probar y guardar antes de usarlo en el Parser.
+ */
+function markConnectorDirty() {
+    const saveStatus = document.getElementById('saveStatus');
+    const statusElement = document.getElementById('connectionStatus');
+    const wasTouched = saveStatus?.textContent !== 'SAVE: NOT SAVED' || statusElement?.textContent !== 'STATUS: NOT TESTED';
+    if (wasTouched) resetConnectionLog();
+}
+
+/** Tras cargar del backend una conexión ya guardada. */
+function markConnectorSavedFromBackend() {
+    setSaveStatus('saved', 'SAVE: SAVED');
+    if (window.ParserUI) ParserUI.updateCheckButtonState();
 }
 
 function createLogLine(type, text) {
@@ -497,9 +399,11 @@ function renderConnectionLog(lines, status) {
     const logContainer = document.getElementById('connectionLogLines');
     const statusElement = document.getElementById('connectionStatus');
 
+    // Los mensajes pueden traer nombres de archivo/rutas: se escapan y solo <br> se respeta
     logContainer.innerHTML = lines.map(line => {
-        const className = `log-line ${line.type}`;
-        return `<p class="${className}">${line.text}</p>`;
+        const className = `log-line ${escapeHtml(line.type)}`;
+        const html = escapeHtml(line.text).replace(/&lt;br\s*\/?&gt;/gi, '<br>');
+        return `<p class="${className}">${html}</p>`;
     }).join('');
 
     statusElement.className = `connection-status ${status.toLowerCase()}`;
@@ -507,32 +411,11 @@ function renderConnectionLog(lines, status) {
 }
 
 function setSaveButtonsEnabled(enabled) {
-    const buttons = document.querySelectorAll('.save-config-button');
+    // Solo los botones de guardado del conector (no Parser/Mapping/Validation/Persistence)
+    const buttons = document.querySelectorAll('#networkPathFields .save-config-button, #sftpFields .save-config-button');
     buttons.forEach(button => {
         button.disabled = !enabled;
     });
-}
-
-function addColumn() {
-    const tbody = document.getElementById('columnsBody');
-    const newRow = document.createElement('tr');
-    newRow.innerHTML = `
-        <td><input type="text" placeholder="column_name"></td>
-        <td>
-            <select>
-                <option>String</option>
-                <option>Date</option>
-                <option>Number</option>
-            </select>
-        </td>
-        <td><span class="delete-btn" onclick="removeRow(this)">x</span></td>
-    `;
-    tbody.appendChild(newRow);
-}
-
-
-function removeRow(element) {
-    element.closest('tr').remove();
 }
 
 // ==================== INITIALIZATION ====================
@@ -542,64 +425,23 @@ function removeRow(element) {
  */
 
 // ==================== PARSER UI WRAPPERS ====================
-/**
- * Wrapper functions to call ParserUI methods from HTML onclick
- * These ensure ParserUI is available when called
- */
-
-// Flag to track ParserUI initialization
-let parserUIReady = false;
-
-// Set flag when ParserUI is ready
-document.addEventListener('DOMContentLoaded', () => {
-  setTimeout(() => {
-    parserUIReady = true;
-    console.log('[Wrapper] ParserUI is ready');
-  }, 100);
-});
-
+// Llamados desde onclick del HTML
 function addParserColumn() {
-  if (window.ParserUI && parserUIReady) {
-    window.ParserUI.addParserColumn();
-  } else {
-    console.warn('[Wrapper] ParserUI not ready yet, waiting...');
-    // Wait a bit and try again
-    setTimeout(() => {
-      if (window.ParserUI) {
-        window.ParserUI.addParserColumn();
-        parserUIReady = true;
-      } else {
-        console.error('[Wrapper] ParserUI still not available');
-      }
-    }, 200);
-  }
-}
-
-function removeParserColumn(element) {
-  if (window.ParserUI && parserUIReady) {
-    window.ParserUI.removeParserColumn(element);
-  } else {
-    console.warn('[Wrapper] ParserUI not ready yet, waiting...');
-    // Wait a bit and try again
-    setTimeout(() => {
-      if (window.ParserUI) {
-        window.ParserUI.removeParserColumn(element);
-        parserUIReady = true;
-      } else {
-        console.error('[Wrapper] ParserUI still not available');
-      }
-    }, 200);
-  }
+  ParserUI.addParserColumn();
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
   console.log('[App] Initializing CSV Integration...');
   
   try {
-    // Initialize network path client
     initializeNetworkPathClient();
-    console.log('[App] Network Path Client initialized');
-    
+
+    // Editar cualquier campo del conector obliga a volver a probar y guardar
+    document.querySelectorAll('#networkPathFields input').forEach(input => {
+      input.addEventListener('input', markConnectorDirty);
+      input.addEventListener('change', markConnectorDirty);
+    });
+
     // Initialize Parser UI
     ParserUI.init();
     console.log('[App] Parser UI initialized');
@@ -619,7 +461,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Load saved configuration (both Connector and Parser)
     console.log('[App] Loading saved configuration...');
     const configLoaded = await ConfigLoader.loadAndRenderNetworkConfig();
-    
+    if (configLoaded) {
+      markConnectorSavedFromBackend();
+    }
+
     if (configLoaded) {
       console.log('[App] Configuration loaded successfully');
     } else {

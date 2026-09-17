@@ -95,11 +95,18 @@ class ValidationUI {
 
     console.log(`[ValidationUI] Table populated with ${mapping.length} rows`);
 
-    // Restore status badge
-    if (appConfig.validation && appConfig.validation.length > 0) {
-      ValidationUI._setStatus('SAVED', 'saved');
-    } else {
+    // Estado: guardado solo si las reglas corresponden al Mapping ACTUAL (mismas columnas y tags)
+    const savedValidation = Array.isArray(appConfig.validation) ? appConfig.validation : [];
+    const validationInSync =
+      savedValidation.length === mapping.length &&
+      mapping.every(m => savedRules[m.csvColumn] && savedRules[m.csvColumn].jsonTag === m.jsonTag);
+
+    if (savedValidation.length === 0) {
       ValidationUI._setStatus('NOT SAVED', 'idle');
+    } else if (!validationInSync) {
+      ValidationUI._setStatus('OUTDATED — MAPPING CHANGED, SAVE AGAIN', 'error');
+    } else {
+      ValidationUI._setStatus('SAVED', 'saved');
     }
 
     return true;
