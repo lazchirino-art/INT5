@@ -14,11 +14,12 @@ Versión: 2026-06-18.
 ## Componentes internos (mapa de funciones)
 
 **Backend**
-- `server.js` — Express, define los endpoints. Funciones clave: `unwrap()` (merge config), `loadProductionContext()` (contexto de producción), `applyMapping()`/`applyMappingToList()`, `withSmbRetries()` + `sleep()` (reintentos).
-- `backend/network-path-handler-windows.js` — clase `NetworkPathHandlerWindows`: `detect()`, `listFilesViaPS()`, `buildPowerShellCommand()`, `patternToRegex()`, `applyPattern()`, `selectFile()`, `readFile()`, `validatePath()`.
+- `server.js` — Express, define los endpoints. Funciones clave: `unwrap()` (merge config), `loadProductionContext()` (contexto de producción), `applyMapping()`/`applyMappingToList()`, `withSmbRetries()` + `sleep()` (reintentos solo de errores transitorios), `writeJsonAtomic()`, `safeSyncLog()`, `parseHasHeader()`.
+- `backend/network-path-handler-windows.js` — clase `NetworkPathHandlerWindows`: `detect()`, `listFiles(path, creds, {force})`, `withShareAccess()`, `mount()`, `patternToRegex()`, `applyPattern()`, `selectFile()`, `readFile()`, `validatePath()`. Autentica con `net use` vía `execFile` (sin shell); lista con `fs.readdir` y lee con `fs.readFile` directamente sobre la ruta UNC.
 - `backend/credential-crypto.js` — clase `CredentialCrypto`: `decrypt()`, `getCryptoKey()` (SHA-256 del secreto → clave AES), `base64ToBytes()`.
 - `backend/csv-utils.js` — `parseCSVContent()`, `parseCSVLine()`, `searchProductInRows()`, `rowToObject()`, `formatValue()`.
-- `backend/local-db.js` — `insertSyncLog()`, `getSyncLog()`, `upsertProduct()`, `readJsonFile()`/`writeJsonFile()`/`ensureDataDir()`.
+- `backend/csv-utils.js` también: `parseDateWithFormat()` (Date Format → `yyyy-MM-dd`).
+- `backend/local-db.js` — `insertSyncLog()`, `getSyncLog()`, `upsertProduct()`, `readJsonFile()`/`writeJsonFile()`/`ensureDataDir()`, `rotateSyncLogIfNeeded()`.
 
 **Frontend (vanilla JS)**
 - `network-path-client.js` (HTTP), `credential-crypto.js` (cifrado AES-GCM en navegador), `config-loader.js` (carga al abrir), `csv-parser.js` (validación/preview), `parser-ui.js`, `mapping-ui.js`, `validation-ui.js`, `persistence-ui.js`, `csv-integration.js` (orquestación/tabs).
@@ -43,11 +44,11 @@ POST /api/config/save  con UNA sección, p.ej. { mapping: [...] }
         connection, parser, mapping, validation, persistence, searchColumnIndex, apiResp
         (apiResp se mergea a su vez sub-sección a sub-sección)
    ↓
-[Back] writeFileSync(app-config.json, JSON.stringify(mergedConfig, null, 2))
+[Back] writeJsonAtomic(app-config.json, mergedConfig)   (escribe .tmp y renombra)
    ↓
 [Back] Responde { status: SUCCESS, config: mergedConfig }
 ```
-**load:** `readFileSync` → `JSON.parse` → `{ status: SUCCESS, config }` (o `NOT_FOUND`). Los archivos estáticos se sirven con `Cache-Control: no-cache`.
+**load:** `readFileSync` → `JSON.parse` → `{ status: SUCCESS, config }` (o `NOT_FOUND`). Los archivos estáticos se sirven con `Cache-Control: no-cache`. La carpeta `config/` no se sirve por HTTP.
 
 ---
 
@@ -67,29 +68,31 @@ El usuario rellena ruta + patrón (+ auth opcional), pulsa **Test Connection**; 
         1. Si hay password cifrada → credentialCrypto.decrypt():
              getCryptoKey(): SHA-256(ENCRYPTION_SECRET) → importKey AES-GCM
              base64ToBytes(iv), base64ToBytes(data) → webcrypto.subtle.decrypt(AES-GCM)
-        2. validatePath(): exige formato UNC (\\...)
-        3. listFilesViaPS(path, creds):
-             buildPowerShellCommand():
-               - sin user/pass → `cmd /c dir <path>`
-               - con user/pass → `net use <path> /user:[DOMINIO\]usuario pass & dir <path>`
-             execAsync(cmd, timeout 10s)
-             Parseа stdout línea a línea:
-               - descarta líneas con <DIR> (carpetas, '.', '..'), cabeceras y resúmenes
-               - se queda con líneas con fecha → extrae el nombre (parts.slice(3))
+        2. validatePath(): valida estrictamente el formato UNC (\\servidor\recurso[\carpeta...])
+        3. listFiles(path, creds, { force: true }) → withShareAccess():
+               - con user/pass → mount(force): `net use \\servidor\recurso /delete /y` y luego
+                 `net use \\servidor\recurso <pass> /user:[DOMINIO\]usuario /persistent:no`
+                 (execFile, sin shell; montajes serializados; error 1219 → desmonta y reintenta)
+               - sin user/pass → identidad de Windows del proceso
+             fs.readdir(path) sobre la ruta UNC (timeout 15 s) → solo archivos
+             Errores clasificados por código de Windows: AUTHENTICATION FAILED (86/1326),
+             ACCOUNT RESTRICTED (1327/1330/1331/1909), ACCESS DENIED (5), SERVER NOT REACHABLE (53),
+             SHARE NOT FOUND (67), CONNECTION LOST (59/64/121/1231), FOLDER REQUIRES CREDENTIALS
         4. applyPattern(files, pattern): patternToRegex (wildcard→regex) → filtra
         5. selectFile(matching): exige exactamente 1 (lanza si 0 o >1)
    ↓
-[Back] Devuelve { status: READY|FAILED|PARTIAL, file, logs[] }
+[Back] Devuelve { status: READY|FAILED, file, logs[] }
    ↓
 [Front] Renderiza logs + estado; si READY habilita Save
 ```
-> 1 intento (acción manual). Mensajes de error mapeados (system error 67/64/5, access denied, etc.).
+> 1 intento (acción manual). `force` remonta para verificar de verdad las credenciales. Editar cualquier campo del Connector anula el estado de test/guardado. SFTP está deshabilitado en el selector ("not available yet").
 
 ### Flujo interno — Save
 ```
 [Front] credential-crypto.js (navegador): cifra password con AES-GCM → enc:v1:aes-gcm:iv:data
 [Front] POST /api/config/save { connection: {..., password: "enc:..."} }
-[Back] merge → writeFileSync(app-config.json)
+[Back] merge → writeJsonAtomic(app-config.json)
+[Front] SAVE: SAVED (tras recargar la página, una conexión guardada también muestra SAVE: SAVED)
 ```
 
 ---
@@ -101,13 +104,16 @@ El usuario define delimitador, Has Header, columnas (nombre/índice/tipo), pulsa
 
 ### Flujo interno — Check
 ```
+[Front] parser-ui.js: Check solo habilitado si el Connector está guardado (SAVE: SAVED) y hay columnas
 [Front] parser-ui.js: getUserColumns() + getParserConfig()
-[Front] obtiene el contenido del archivo (backend lo lee del SMB) y llama a
+[Front] obtiene el contenido del archivo (POST /api/connector/read-file; el backend lo lee del SMB) y llama a
         csv-parser.js → CSVParser.validateConfiguration(connectorConfig, parserConfig):
-          - parseCSVLine() de la cabecera o, si Has Header=No, autogenera
-            columnNames por POSICIÓN (Column0, Column1, …)
+          - detectDelimiter(): si el detectado difiere del configurado y separa más
+            columnas → ERROR (status FAILED); el preview se parsea con el delimitador CONFIGURADO
+          - parseCSVLine() (soporta escape distinto de la comilla, p. ej. \) de la cabecera o,
+            si Has Header=No, autogenera columnNames por POSICIÓN (Column0, Column1, …)
           - valida que cada índice de usuario existe
-          - recorre filas comprobando consistencia de nº de columnas
+          - recorre filas comprobando consistencia de nº de columnas (el error indica la fila)
           - genera preview = array posicional de filas (parseCSVLine por fila)
    ↓
 [Front] parser-ui.js: validateUserColumnsAgainstFile() (compara nombres solo si Has Header=Yes)
@@ -115,12 +121,13 @@ El usuario define delimitador, Has Header, columnas (nombre/índice/tipo), pulsa
 [Front] showPreview(preview, userColumns): pinta cada celda como row[col.index]
         (lee por COLUMN INDEX → coincide con lo que hará producción en rowToObject)
    ↓
-[Front] updateCheckButtonState() / habilita Save si todo correcto
+[Front] updateCheckButtonState() / habilita Save solo si el status es VALID
+        (editar, añadir o quitar columnas anula el Check)
 ```
 
 ### Flujo interno — Save
 ```
-[Front] POST /api/config/save { parser: { delimiter, hasHeader, quoteChar, escapeChar, columns[...] } }
+[Front] POST /api/config/save { parser: { delimiter, hasHeader, quoteChar, escapeChar, decimalSeparator, dateFormat, emptyValue, columns[...] } }
 [Back] merge → app-config.json
 [Front] updateStatusDisplay('SAVED'); MappingUI.loadFromParser() (auto-rellena Mapping)
 ```
@@ -151,6 +158,7 @@ Asigna un JSON tag a cada columna y elige la **Search Column** (la del código).
 [Back] merge → app-config.json (mapping + searchColumnIndex)
 ```
 > En CSV `include` siempre `true` (sin checkbox). `searchColumnIndex` queda guardado → producción solo envía `productCode`.
+> Si las columnas del Parser cambian después de guardar el Mapping, o la Search Column ya no existe, el estado pasa a **OUTDATED — PARSER CHANGED, SAVE AGAIN** (Validation hace lo mismo con **OUTDATED — MAPPING CHANGED, SAVE AGAIN** si cambian los tags).
 
 ---
 
@@ -181,7 +189,7 @@ Asigna un JSON tag a cada columna y elige la **Search Column** (la del código).
         - loadConfig(): GET /api/config/load → restaura triggerMode/validationLevel
         - loadLog(page): GET /api/sync-log?page&limit → renderiza tabla (píldora + campos en línea)
    ↓
-[Back] merge → app-config.json ; getSyncLog() lee data/sync-log.json (newest-first, paginado)
+[Back] merge → app-config.json ; getSyncLog() lee data/sync-log.json (newest-first, paginado, filtro opcional ?source=apiResp|csv)
 ```
 
 ---
@@ -196,22 +204,33 @@ Asigna un JSON tag a cada columna y elige la **Search Column** (la del código).
    ↓
 [Back] loadProductionContext():
         1. readFileSync(app-config.json) → JSON.parse → config
-        2. Valida connection.path y (filename | fileNamePattern) y parser.columns
-        3. CredentialCrypto.decrypt(password) si está cifrada
-        4. new NetworkPathHandlerWindows(crypto); creds = { username, password(desc), domain }
-        5. withSmbRetries( async () => {           ← 3 intentos, 10 s entre cada uno
+        2. Valida connection.path y (filename | fileNamePattern) y parser.columns;
+           connectorType distinto de networkPath → 400
+        3. useAuthentication / useDomain: si están a false no se usan credenciales / dominio
+        4. CredentialCrypto.decrypt(password) si está cifrada
+             (sin ENCRYPTION_SECRET o secreto distinto → 500 con mensaje claro; nunca usa el texto cifrado)
+        5. new NetworkPathHandlerWindows(); creds = { username, password(desc), domain }
+        6. withSmbRetries( async () => {           ← hasta 3 intentos, 10 s entre cada uno
               si no hay filename fijo:
-                files = listFilesViaPS(path, creds)        (dir por PowerShell)
+                files = listFiles(path, creds)             (fs.readdir; reutiliza la sesión SMB
+                                                            y solo monta con net use si falla)
                 matching = applyPattern(files, fileNamePattern)
                 filename = selectFile(matching)            (1 exacto)
-              return handler.readFile({ path, filename, ...creds })  (type por cmd)
-           })                                          ← solo se reintenta esta parte SMB
-        6. csvUtils.parseCSVContent(fileContent, delimiter, hasHeader, quote, escape)
+              return handler.readFile({ path, filename, ...creds })
+                                                           (fs.readFile; máx 50 MB, timeout 30 s;
+                                                            caché por fecha de modificación + tamaño)
+           })                                          ← solo se reintentan errores de red/servidor;
+                                                          error.retryable === false (credenciales,
+                                                          cuenta bloqueada, acceso denegado, 0 o >1
+                                                          archivos, archivo grande) falla al instante
+           Fallo → 400 si no reintentable, 502 si red/servidor
+        7. csvUtils.parseCSVContent(fileContent, delimiter, parseHasHeader(hasHeader), quote, escape)
               → parseCSVLine por fila → rows: string[][]
-        7. return { config, connectorConfig, parserConfig, mappingConfig, rows }
+        8. return { config, connectorConfig, parserConfig, mappingConfig, rows }
    ↓
 [Back] effectiveSearchIndex = request.searchColumnIndex ?? config.searchColumnIndex
-        (si ninguno → ERROR "search column not configured")
+        (si ninguno → ERROR 400 "search column not configured";
+         índice inválido → ERROR 500 "Review the Search Column in the Mapping tab")
    ↓
 [Back] csvUtils.searchProductInRows(rows, productCode, effectiveSearchIndex, parser.columns)
         → compara el valor de cada fila en esa columna (en memoria)
@@ -222,7 +241,8 @@ Asigna un JSON tag a cada columna y elige la **Search Column** (la del código).
         │
         └─ Encontrado → applyMapping(product, mapping):
               por cada {csvColumn, jsonTag, include}: si include!==false → mapped[jsonTag] = product[csvColumn]
-              (internamente rowToObject ya leyó cada valor por col.index y aplicó formatValue por tipo)
+              (internamente rowToObject ya leyó cada valor por col.index y aplicó formatValue por tipo:
+               Empty Value Representation → "", Number con Decimal Separator, Date con Date Format → yyyy-MM-dd)
               ↓
            Validación: por cada regla required → si mapped[jsonTag] vacío:
               insertSyncLog({ result:'VALIDATION_FAILED', fields:mapped, ... })
@@ -243,9 +263,10 @@ Asigna un JSON tag a cada columna y elige la **Search Column** (la del código).
 ```
 
 ### Internos de persistencia (local-db.js)
-- `insertSyncLog(entry)`: `ensureDataDir()` → `readJsonFile(sync-log.json, [])` → `push({ id, ...entry })` → `writeJsonFile()`. Append-only, nunca se purga.
+- `insertSyncLog(entry)`: `ensureDataDir()` → `rotateSyncLogIfNeeded()` (≥ 5 MB → renombra a `sync-log.<fecha>.json`) → `readJsonFile(sync-log.json, [])` → `push({ id, ...entry })` → `writeJsonFile()` (atómico: `.tmp` + renombrado). Append-only, no se purga. Desde `server.js` se llama vía `safeSyncLog()`, que captura el error para que la petición siempre reciba respuesta.
+- `readJsonFile()`: si el JSON está corrupto lo renombra a `<archivo>.corrupt-<fecha>` y devuelve el valor por defecto (no sobrescribe el historial).
 - `upsertProduct({ productCode, data })`: `readJsonFile(products.json, {})` → `cache[productCode] = { ...data, _updatedAt }` → `writeJsonFile()`.
-- `getSyncLog({ page, limit })`: lee, invierte (newest-first), pagina.
+- `getSyncLog({ page, limit, source })`: lee, filtra por `source` (`apiResp` | `csv`) si se indica, invierte (newest-first), pagina.
 
 ### Internos de cifrado (credential-crypto.js)
 - `getCryptoKey()`: `TextEncoder` del `ENCRYPTION_SECRET` → `subtle.digest('SHA-256')` → `importKey('raw', ..., AES-GCM)`.
@@ -257,9 +278,10 @@ Asigna un JSON tag a cada columna y elige la **Search Column** (la del código).
 
 | Paso | Endpoint | Funciones internas clave |
 |------|----------|--------------------------|
-| Connector test | `POST /test-connection` | `detect` → `decrypt` → `validatePath` → `listFilesViaPS`/`buildPowerShellCommand` → `applyPattern` → `selectFile` |
-| Guardar (cualquier tab) | `POST /api/config/save` | `unwrap` + merge por secciones → `writeFileSync` |
+| Connector test | `POST /test-connection` | `detect` → `decrypt` → `validatePath` → `listFiles({force})`/`withShareAccess`/`mount` → `applyPattern` → `selectFile` |
+| Preview del Parser | `POST /api/connector/read-file` | `detect` → `readFile` |
+| Guardar (cualquier tab) | `POST /api/config/save` | `unwrap` + merge por secciones → `writeJsonAtomic` |
 | Cargar (cualquier tab) | `GET /api/config/load` | `readFileSync` → `JSON.parse` |
-| Importar | `POST /api/product/import` | `loadProductionContext` (`withSmbRetries`→`listFilesViaPS`/`readFile`→`parseCSVContent`) → `searchProductInRows` → `applyMapping` → validación → `upsertProduct` + `insertSyncLog` |
+| Importar | `POST /api/product/import` | `loadProductionContext` (`withSmbRetries`→`listFiles`/`readFile`→`parseCSVContent`) → `searchProductInRows` → `applyMapping` → validación → `upsertProduct` + `safeSyncLog` |
 | Columna de búsqueda | `GET /api/product/search-column` | lee `config.searchColumnIndex` + nombre de columna |
 | Log | `GET /api/sync-log` | `getSyncLog` (reverse + paginado) |

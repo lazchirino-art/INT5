@@ -12,8 +12,8 @@ CORINA (software empaque)
   INT5 (Node.js + Express, puerto 3000)
         │
         ├── Lee app-config.json  (conexión, parser, mapping, validación, persistencia)
-        ├── PowerShell → SMB → CSV en red local
-        ├── Parsea y busca el producto
+        ├── Lee el CSV de la red local (SMB: net use + lectura directa de la ruta UNC)
+        ├── Parsea (separador decimal, formato de fecha, valores vacíos) y busca el producto
         ├── Aplica mapping de columnas → JSON tags
         ├── Valida campos requeridos
         └── Guarda log en data/sync-log.json
@@ -26,13 +26,13 @@ INT5/
 ├── server.js                          ← Servidor principal (npm start)
 ├── package.json
 ├── backend/
-│   ├── network-path-handler-windows.js  ← Acceso SMB vía PowerShell
+│   ├── network-path-handler-windows.js  ← Acceso SMB (net use sin shell + fs sobre la ruta UNC)
 │   ├── credential-crypto.js             ← Cifrado AES-GCM (lado servidor)
 │   ├── csv-utils.js                     ← Utilidades de parseo CSV
-│   └── local-db.js                      ← Storage JSON (sync-log + cache productos)
-├── config/
-│   ├── app-config.json                  ← Configuración persistida (auto-generado)
+│   ├── local-db.js                      ← Storage JSON (sync-log + cache productos)
 │   └── .env                             ← ENCRYPTION_SECRET
+├── config/
+│   └── app-config.json                  ← Configuración persistida (auto-generado)
 ├── data/
 │   ├── sync-log.json                    ← Log de importaciones (auto-generado)
 │   └── products.json                    ← Caché de productos (auto-generado)
@@ -51,12 +51,12 @@ INT5/
 │   │   ├── validation-ui.js             ← UI del tab Validation
 │   │   └── persistence-ui.js            ← UI del tab Persistence + Sync Log
 │   └── styles/
-│       ├── csv-integration.css
-│       └── main.css
+│       └── csv-integration.css
 └── docs/
     ├── API-ENDPOINT.md                  ← Referencia completa de la API
-    ├── BACKEND-SMB.md                   ← Documentación técnica del backend SMB
-    └── SMB-FILE-DETECTOR.md             ← Módulo de detección de archivos
+    ├── INT5-DOCUMENTACION-TECNICA.md    ← Documentación técnica
+    ├── FLUJO-TECNICO.md                 ← Flujo interno por pestaña/endpoint
+    └── INSTALACION-PC-FINAL.md          ← Instalación en el equipo final
 ```
 
 ## Wizard de Configuración (5 tabs)
@@ -65,7 +65,7 @@ INT5/
 |-----|--------|-------------|
 | 1 | **Connector** | Ruta SMB, patrón de archivo, credenciales |
 | 2 | **Parser** | Delimitador, columnas esperadas, preview |
-| 3 | **Mapping** | Renombrar columnas CSV → JSON tags de salida |
+| 3 | **Mapping** | Renombrar columnas CSV → JSON tags de salida + Search Column |
 | 4 | **Validation** | Marcar campos como Required u Optional |
 | 5 | **Persistence** | Modo Auto/Manual + Sync Log de importaciones |
 
@@ -91,14 +91,14 @@ npm start
 | `express` | Servidor HTTP |
 | `cors` | Cabeceras CORS |
 | `dotenv` | Variables de entorno |
-| `smb2` | Conexión SMB (no usado directamente — PowerShell es el canal real) |
 | `bonjour-service` | mDNS para `int5.local` |
 
 ## Seguridad
 
 - Las contraseñas se cifran con **AES-GCM** antes de guardarse en `app-config.json`
-- La clave de cifrado está en `backend/.env` (`ENCRYPTION_SECRET`) — nunca se sube al repositorio
-- En el frontend, el cifrado usa `window.CSV_INT_LOCAL_SECRET` (definido en `csv-integration.html`)
+- La clave de cifrado está en `backend/.env` (`ENCRYPTION_SECRET`), que se incluye en la entrega (ver `docs/INSTALACION-PC-FINAL.md`)
+- En el frontend, el cifrado usa `window.CSV_INT_LOCAL_SECRET` (definido en `csv-integration.html`); debe coincidir con `ENCRYPTION_SECRET`
+- La carpeta `config/` no se sirve por HTTP
 - Los logs nunca incluyen contraseñas en claro
 
 ## Licencia

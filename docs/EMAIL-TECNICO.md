@@ -28,7 +28,7 @@ INT5 y la app de producción corren en **el mismo equipo** (kiosco). INT5 corre 
 
 ## Componentes creados
 
-- **Backend:** `server.js` (endpoints), `network-path-handler-windows.js` (SMB vía PowerShell), `credential-crypto.js` (AES-GCM), `csv-utils.js` (parseo/búsqueda), `local-db.js` (sync log + caché), `api-resp-handler.js` (cliente API-RESP).
+- **Backend:** `server.js` (endpoints), `network-path-handler-windows.js` (SMB: `net use` sin shell para autenticar + lectura directa de la ruta UNC), `credential-crypto.js` (AES-GCM), `csv-utils.js` (parseo/búsqueda), `local-db.js` (sync log + caché), `api-resp-handler.js` (cliente API-RESP).
 - **Frontend (vanilla JS):** dos wizards de 5 pestañas — CSV (Connector, Parser, Mapping, Validation, Persistence) y API-RESP (Connector, Response Schema, Mapping, Validation, Persistence).
 - **Utilidades:** `mock-api-server.js` (mock en :3001 para probar API-RESP), `start-int5.vbs` + `install-autostart.bat` (arranque automático en kiosco).
 
@@ -49,7 +49,10 @@ Contrato completo en `docs/API-ENDPOINT.md`.
 
 ## Correcciones aplicadas durante las pruebas
 
-- Detección de archivos: las carpetas (`<DIR>`, `.`/`..`) ya no se cuentan como archivos.
+- Detección de archivos: las carpetas ya no se cuentan como archivos.
+- Acceso SMB sin PowerShell/cmd: `net use` con `execFile` (sin shell) solo para autenticar; listado y lectura con `fs` sobre la ruta UNC. Errores clasificados por código de Windows; reintentos solo para errores de red (contraseña incorrecta o cuenta bloqueada fallan al instante, sin riesgo de bloquear la cuenta).
+- Producción respeta `useAuthentication`/`useDomain`, `hasHeader: "No"`, separador decimal, formato de fecha y valores vacíos del Parser.
+- Seguridad: `config/` ya no se sirve por HTTP, `GET /:page` limitado a `src/pages`, escrituras atómicas de config y sync log.
 - Parser: el Has Header restaura "No" al cargar; nombres de columna consecutivos por posición; el preview respeta el Column Index; el Save actualiza la etiqueta de estado.
 - Connector: `domain` aplicado igual en Test Connection y lectura real; mensaje claro "la carpeta requiere credenciales" con auth desmarcado.
 - Mapping CSV: eliminado el checkbox Include redundante (se mantiene en API-RESP).
@@ -63,8 +66,9 @@ Contrato completo en `docs/API-ENDPOINT.md`.
 
 ## Pendiente / a futuro
 
-- El sync log no se purga (crece indefinidamente): valorar política de rotación.
-- El connector no se re-testea al cargar: si se reconfigura, hay que probar/guardar conexión para habilitar el Check del Parser.
+- El sync log no se purga: al superar 5 MB se archiva (`data/sync-log.<fecha>.json`); los archivados no se borran solos.
+- El connector no se re-testea al cargar (una conexión guardada aparece como SAVE: SAVED); si se edita, hay que probar y guardar de nuevo.
+- SFTP aún no disponible.
 
 Repos y código en la rama `main`. Quedo atento a comentarios.
 

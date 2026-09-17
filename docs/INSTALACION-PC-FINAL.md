@@ -11,7 +11,7 @@ Versión: 2026-06-18.
 
 | Requisito | Detalle | ¿Obligatorio? |
 |-----------|---------|---------------|
-| **Sistema operativo** | **Windows 10 / 11 (64-bit)** | ✅ Sí — INT5 accede a recursos SMB con **PowerShell/cmd** de Windows. No funciona en Linux/Mac. |
+| **Sistema operativo** | **Windows 10 / 11 (64-bit)** | ✅ Sí — INT5 accede a recursos SMB con rutas UNC y el comando **`net use`** de Windows. No funciona en Linux/Mac. |
 | **Node.js** | **18 o superior** (recomendado **20 LTS**). Incluye `npm`. | ✅ Sí — el servidor necesita `fetch` nativo (Node 18+). |
 | **Python** | — | ❌ **NO se necesita.** El proyecto es 100% Node.js. |
 | **Compiladores / build tools** | — | ❌ **NO se necesitan.** Todas las dependencias son JavaScript puro (no hay módulos nativos / node-gyp). |
@@ -32,7 +32,6 @@ Se instalan automáticamente con `npm install` (definidas en `package.json`):
 | `cors` | Permitir llamadas desde la app de producción |
 | `dotenv` | Leer `backend/.env` (secreto de cifrado) |
 | `bonjour-service` | Descubrimiento mDNS (`int5.local`) |
-| `smb2` | Dependencia declarada (el acceso real se hace por PowerShell) |
 
 Todas son **JavaScript puro**: no requieren Visual Studio, ni Python, ni node-gyp.
 
@@ -73,7 +72,7 @@ PORT=3000
 
 Ver la explicación completa del secreto en la **sección 9** de este documento.
 
-> Regla de oro: el `ENCRYPTION_SECRET` del `.env` (backend) **debe ser idéntico** al `window.CSV_INT_LOCAL_SECRET` del frontend (en `src/pages/csv-integration.html` e `index.html`). En esta entrega ya coinciden. Si alguno se cambia y el otro no, las contraseñas guardadas dejan de descifrarse.
+> Regla de oro: el `ENCRYPTION_SECRET` del `.env` (backend) **debe ser idéntico** al `window.CSV_INT_LOCAL_SECRET` del frontend (en `src/pages/csv-integration.html`). En esta entrega ya coinciden. El servidor carga `backend/.env` desde la carpeta del proyecto (da igual desde qué directorio se arranque) y, si falta `ENCRYPTION_SECRET`, muestra un error al arrancar; el secreto no se imprime en consola. Si alguno se cambia y el otro no, las contraseñas guardadas dejan de descifrarse.
 
 ### Paso 5 — Arrancar el servidor
 - **Manual (para probar):**
@@ -150,8 +149,9 @@ Estas carpetas/archivos **no forman parte del producto** y no deben copiarse al 
 |---------|------------------|
 | `'node' no se reconoce` | Node.js no instalado o no en el PATH → reinstalar Node y reabrir la terminal. |
 | `EADDRINUSE :3000` | Ya hay un INT5 corriendo en el puerto 3000 → cerrar la instancia anterior. |
-| Las contraseñas no descifran / SMB falla con credenciales correctas | El `ENCRYPTION_SECRET` del `.env` no coincide con el del frontend → corregir y volver a guardar el Connector. |
-| "La carpeta requiere credenciales" con auth desmarcado | Comportamiento correcto: el recurso del cliente exige credenciales → activar Authentication. |
+| Las contraseñas no descifran / la importación responde 500 "The saved password cannot be decrypted" | El `ENCRYPTION_SECRET` del `.env` falta o no coincide con el del frontend → corregir y volver a guardar el Connector. |
+| Test Connection: "AUTHENTICATION FAILED" / "ACCOUNT RESTRICTED" | Usuario/contraseña/dominio incorrectos, o cuenta bloqueada/deshabilitada en el servidor del cliente. INT5 no reintenta estos errores (para no bloquear la cuenta). |
+| "FOLDER REQUIRES CREDENTIALS" con auth desmarcado | Comportamiento correcto: el recurso del cliente exige credenciales → activar Authentication. |
 | El servidor no arranca solo al encender | Ejecutar `install-autostart.bat` como administrador. |
 
 ---
@@ -178,7 +178,7 @@ El cifrado ocurre en dos momentos:
 
 | Momento | Quién | Dónde está el secreto |
 |---------|-------|----------------------|
-| **Al guardar** el Connector (navegador) | Frontend **cifra** la contraseña | `src/pages/csv-integration.html` e `index.html`, en `window.CSV_INT_LOCAL_SECRET` |
+| **Al guardar** el Connector (navegador) | Frontend **cifra** la contraseña | `src/pages/csv-integration.html`, en `window.CSV_INT_LOCAL_SECRET` |
 | **Al acceder al SMB** (servidor) | Backend **descifra** la contraseña | `backend/.env`, en `ENCRYPTION_SECRET` |
 
 ➡️ **Los dos valores tienen que ser idénticos.** Lo que el navegador cierra, el servidor solo lo abre con la misma llave. En esta entrega **ya coinciden** (el valor de arriba).
@@ -193,7 +193,7 @@ Backend descifra con secreto B  →  ❌ falla aunque la contraseña sea correct
 Como la llave está también en el **frontend** (en el HTML que se entrega), este cifrado sirve para que la contraseña **no se vea a simple vista** en `app-config.json` (protege de una mirada casual), **pero no protege** frente a alguien que tenga el código del proyecto (la llave está ahí mismo, en el HTML). Es **cifrado de ofuscación**, no seguridad fuerte. Incluir el `.env` en la entrega **no expone nada nuevo**, porque el secreto ya viaja en el HTML.
 
 ### 9.5. Si alguna vez cambias el secreto
-1. Cambia el valor en **los dos sitios** (`.env` y los HTML) por el mismo valor nuevo.
+1. Cambia el valor en **los dos sitios** (`.env` y `csv-integration.html`) por el mismo valor nuevo.
 2. **Vuelve a guardar la configuración del Connector** (la contraseña se re-cifra con la llave nueva). Las contraseñas guardadas con la llave anterior dejarán de descifrarse.
 
 ### 9.6. Mejora futura (no aplica a esta entrega)

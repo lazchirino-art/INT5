@@ -24,10 +24,10 @@ Duración estimada: 6–9 minutos.
 
 | # | En pantalla | Narración | Resultado esperado |
 |---|-------------|-----------|--------------------|
-| 1 | Abrir el wizard CSV. Tab Connector. Seleccionar Network Path, poner ruta y patrón `*.csv`. **Authentication desmarcado.** Test Connection. | "Primero conectamos a la carpeta del cliente. Sin credenciales, sobre un recurso protegido…" | ❌ **"La carpeta requiere credenciales"** (acceso denegado) |
+| 1 | Abrir el wizard CSV. Tab Connector. Seleccionar Network Path, poner ruta y patrón `*.csv`. **Authentication desmarcado.** Test Connection. | "Primero conectamos a la carpeta del cliente. Sin credenciales, sobre un recurso protegido…" | ❌ **"FOLDER REQUIRES CREDENTIALS"** (acceso denegado) |
 | 2 | Marcar **Authentication**, usuario `client`, contraseña `client123`. Test Connection. | "Ahora con las credenciales que da el cliente…" | ✅ **READY** — detecta el archivo (p. ej. `w.csv`) |
-| 3 | (Opcional) Poner contraseña incorrecta. Test Connection. | "Si las credenciales no son válidas…" | ❌ **Authentication failed** |
-| 4 | Volver a credenciales correctas. **Save Configuration.** | "Guardamos la conexión." | Etiqueta **SAVE: SAVED** (verde) |
+| 3 | (Opcional) Poner contraseña incorrecta. Test Connection. | "Si las credenciales no son válidas…" | ❌ **AUTHENTICATION FAILED** (al instante, sin reintentos) |
+| 4 | Volver a credenciales correctas. **Test Connection** de nuevo (editar un campo anula el test anterior) y **Save Configuration.** | "Guardamos la conexión." | Etiqueta **SAVE: SAVED** (verde) |
 
 > Punto clave a mencionar: el "acceso libre" solo ocurre si la carpeta es pública o el usuario del equipo ya tiene permiso; en un recurso protegido del cliente, sin credenciales, deniega.
 
@@ -37,9 +37,9 @@ Duración estimada: 6–9 minutos.
 
 | # | En pantalla | Narración | Resultado esperado |
 |---|-------------|-----------|--------------------|
-| 5 | Tab **Parser**: elegir delimitador, Has Header, añadir columnas (nombre + índice + tipo). **Check Configuration.** | "Definimos cómo leer el archivo. El índice elige qué columna del CSV se lee." | Preview muestra los datos según el índice configurado |
-| 6 | **Save Configuration** del Parser. | "Guardamos el parser." | Etiqueta **STATUS: SAVED** (verde) |
-| 7 | Tab **Mapping**: a cada columna asignar su JSON tag. **Save Mapping.** | "Asignamos el nombre de salida de cada campo." | **MAPPING: SAVED** |
+| 5 | Tab **Parser**: elegir delimitador, Has Header, añadir columnas (nombre + índice + tipo). **Check Configuration.** | "Definimos cómo leer el archivo. El índice elige qué columna del CSV se lee." | Preview muestra los datos según el índice configurado; **STATUS: VALID** |
+| 6 | **Save Configuration** del Parser (solo habilitado con VALID). | "Guardamos el parser." | Etiqueta **STATUS: SAVED** (verde) |
+| 7 | Tab **Mapping**: a cada columna asignar su JSON tag y elegir la **Search Column**. **Save Mapping.** | "Asignamos el nombre de salida de cada campo y la columna donde se busca el código." | **MAPPING: SAVED** |
 | 8 | Tab **Validation**: marcar como requeridos los campos críticos. **Save.** | "Marcamos qué campos son obligatorios." | **VALIDATION: SAVED** |
 | 9 | Tab **Persistence**: elegir **Auto**. **Save.** | "Modo automático: importa sin confirmación." | **PERSISTENCE: SAVED** |
 | 10 | Recargar la página y recorrer las pestañas. | "Todo lo guardado se recarga solo al reentrar." | Cada pestaña muestra lo guardado |

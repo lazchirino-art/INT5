@@ -20,7 +20,9 @@ Base URL: `http://localhost:3000` (o `http://int5:3000` / `http://int5.local:300
 
 Guarda una sección de la configuración. Cada tab guarda únicamente su sección; el backend hace merge con las demás.
 
-**Secciones disponibles:** `connection` | `parser` | `mapping` | `validation` | `persistence`
+**Secciones disponibles:** `connection` | `parser` | `mapping` | `validation` | `persistence` | `searchColumnIndex` | `apiResp`
+
+La escritura de `config/app-config.json` es atómica (archivo temporal + renombrado). La carpeta `config/` no se sirve por HTTP (`GET /config/app-config.json` → 404).
 
 **Ejemplo — guardar mapping:**
 ```json
@@ -89,6 +91,8 @@ Elimina la configuración guardada. Crea un backup automático antes de borrar.
 
 Prueba la conexión SMB y detecta el archivo que coincide con el patrón. Usado por el Tab 1 del wizard.
 
+Con credenciales, desmonta y vuelve a montar el recurso (`net use`, ejecutado sin shell) para verificar de verdad usuario y contraseña; después lista la carpeta directamente sobre la ruta UNC. Requiere Windows. La contraseña puede llegar cifrada (`enc:...`); el backend la descifra con `ENCRYPTION_SECRET`.
+
 **Request:**
 ```json
 {
@@ -102,7 +106,7 @@ Prueba la conexión SMB y detecta el archivo que coincide con el patrón. Usado 
 
 | Campo | Requerido | Descripción |
 |-------|-----------|-------------|
-| `path` | Sí | Ruta UNC (debe comenzar con `\\`) |
+| `path` | Sí | Ruta UNC `\\servidor\recurso\carpeta` (validación estricta: sin caracteres inválidos en rutas Windows) |
 | `pattern` | Sí | Patrón de archivo (`*` como wildcard) |
 | `username` | No | Usuario SMB |
 | `password` | No | Contraseña |
@@ -113,7 +117,7 @@ Prueba la conexión SMB y detecta el archivo que coincide con el patrón. Usado 
 {
   "status": "READY",
   "file":   "medications_20260602.csv",
-  "logs":   ["✓ Folder accessible", "✓ File selected: medications_20260602.csv"]
+  "logs":   ["...", "Folder accessible", "Files found: 3", "Matching files: 1", "File selected: medications_20260602.csv"]
 }
 ```
 
@@ -122,9 +126,11 @@ Prueba la conexión SMB y detecta el archivo que coincide con el patrón. Usado 
 {
   "status": "FAILED",
   "file":   null,
-  "logs":   ["✗ Access is denied"]
+  "logs":   ["...", "Error: AUTHENTICATION FAILED<br>Username or password is incorrect.<br>..."]
 }
 ```
+
+El mensaje se clasifica por el código de error de Windows: `AUTHENTICATION FAILED`, `ACCOUNT RESTRICTED` (cuenta bloqueada, deshabilitada o caducada), `ACCESS DENIED`, `FOLDER REQUIRES CREDENTIALS`, `SERVER NOT REACHABLE`, `SHARE NOT FOUND`, `CONNECTION LOST`, además de `NO FILES FOUND`, `MULTIPLE FILES FOUND` e `INVALID PATH FORMAT`. Si faltan `path`/`pattern` o la ruta no empieza por `\\`, responde HTTP 400 con `status: "FAILED"`.
 
 ---
 
@@ -140,9 +146,12 @@ Lee el contenido de un archivo CSV desde la ruta SMB. Usado internamente por el 
   "fileNamePattern":  "*.csv",
   "useAuthentication": true,
   "username":         "usuario",
-  "password":         "contraseña"
+  "password":         "contraseña",
+  "domain":           "DOMINIO"
 }
 ```
+
+Si `useAuthentication` es `false`, se ignoran `username`/`password`/`domain`. Tamaño máximo del archivo: 50 MB (timeout de lectura 30 s). El contenido se cachea y solo se vuelve a leer si cambian la fecha de modificación o el tamaño. Se detecta la codificación (UTF-8, UTF-8 con BOM o Windows-1252) y se devuelve en `encoding`.
 
 **Respuesta:**
 ```json
@@ -153,6 +162,8 @@ Lee el contenido de un archivo CSV desde la ruta SMB. Usado internamente por el 
   "encoding": "UTF-8"
 }
 ```
+
+**Respuesta (error):** `{ "error": { "message": "AUTHENTICATION FAILED Username or password is incorrect. ..." } }` — HTTP 400 para errores de configuración (credenciales, patrón, archivo demasiado grande), HTTP 502 para errores de red/servidor.
 
 ---
 
@@ -239,13 +250,23 @@ Se configura en la pestaña Persistence (solo aplica en modo Manual).
 }
 ```
 
-> **Reintentos:** el acceso al archivo (detección + lectura SMB) se reintenta ante fallos transitorios de red — **3 intentos con 10 s de espera entre cada uno** (intento 1 → 10 s → intento 2 → 10 s → intento 3 → `ERROR`). Solo se reintenta el acceso SMB; `NOT_FOUND` se decide tras leer el archivo y no se reintenta. **Implicación para producción:** si la red está caída, esta llamada puede tardar ~20–30 s en responder `ERROR`; la app de producción debe contemplar esa espera (timeout/feedback de "reintentando").
+| HTTP | Cuándo |
+|------|--------|
+| 400 | Configuración incompleta (sin config, sin ruta/patrón, sin columnas, Search Column no configurada, `connectorType` distinto de `networkPath`) o error SMB no reintentable (contraseña incorrecta, cuenta bloqueada, acceso denegado, ningún archivo o varios archivos que coinciden, archivo > 50 MB) |
+| 502 | Error SMB de red/servidor (servidor inalcanzable, conexión perdida, timeout) tras agotar los reintentos |
+| 500 | Config corrupta, contraseña guardada que no se puede descifrar (`ENCRYPTION_SECRET` ausente o distinto) o índice de Search Column inválido |
+
+Los errores de lectura SMB llegan como `"No se pudo leer el archivo (N intentos): <motivo>"`.
+
+> **Reintentos:** el acceso al archivo (detección + lectura SMB) se reintenta **solo ante fallos transitorios de red/servidor** — **3 intentos con 10 s de espera entre cada uno** (intento 1 → 10 s → intento 2 → 10 s → intento 3 → `ERROR`). Contraseña incorrecta, cuenta bloqueada, acceso denegado, ningún/varios archivos coincidentes o archivo demasiado grande **fallan al instante, sin reintentar** (con credenciales malas, reintentar podría bloquear la cuenta). `NOT_FOUND` se decide tras leer el archivo y no se reintenta. **Implicación para producción:** si la red está caída, esta llamada puede tardar ~20–30 s en responder `ERROR`; la app de producción debe contemplar esa espera (timeout/feedback de "reintentando").
 
 ---
 
 ### `POST /api/product/import-api`
 
 Equivalente a `/api/product/import` pero para la integración **API-RESP** (consume un endpoint REST externo en vez de leer un CSV). Mismo contrato de request/response (`requestedBy`, `confirmedBy`, `confirmed`, `validationLevel`, estados `IMPORTED` / `NOT_FOUND` / `VALIDATION_FAILED` / `CONFIRMATION_REQUIRED` / `ERROR`). No requiere `searchColumnIndex` (el producto se pide por `productCode` directamente a la API externa). Las entradas que genera en el sync log llevan `source: "apiResp"`.
+
+La petición a la API externa tiene un timeout de **10 s**. Solo un **HTTP 404** de la API externa se traduce en `NOT_FOUND`; cualquier otro fallo (401, 500, error de red, timeout) responde `status: "ERROR"` con **HTTP 502** y se registra como `ERROR` en el log. Las URLs que aparecen en los mensajes de error se muestran sin query string.
 
 Endpoints auxiliares del wizard API-RESP:
 - `POST /api/apiResp/test-connection` — prueba el endpoint externo y detecta los campos del JSON.
@@ -256,7 +277,7 @@ Endpoints auxiliares del wizard API-RESP:
 
 ### `GET /api/sync-log`
 
-Devuelve el historial de todas las llamadas a `/api/product/import`, ordenado del más reciente al más antiguo. Nunca se borra.
+Devuelve el historial de las llamadas a `/api/product/import` y `/api/product/import-api`, ordenado del más reciente al más antiguo. No se purga: cuando `data/sync-log.json` supera 5 MB se archiva como `data/sync-log.<fecha>.json` y se empieza uno nuevo (este endpoint lee solo el archivo actual). Si el JSON está corrupto, se renombra a `sync-log.json.corrupt-<fecha>` en vez de sobrescribirse. Las escrituras son atómicas y un fallo al escribir el log nunca deja sin respuesta la petición de importación.
 
 **Query params:**
 
@@ -264,6 +285,7 @@ Devuelve el historial de todas las llamadas a `/api/product/import`, ordenado de
 |-----------|---------|-----|-------------|
 | `page` | `1` | — | Página (1-based) |
 | `limit` | `20` | `100` | Entradas por página |
+| `source` | — | — | `apiResp` (solo API-RESP) o `csv` (solo CSV) |
 
 **Ejemplo:** `GET /api/sync-log?page=2&limit=10`
 
@@ -414,4 +436,6 @@ Estadísticas del CSV (total de filas, columnas, valores únicos, etc.).
 
 - Todos los endpoints de producto usan `loadProductionContext()` — requieren que los tabs 1 y 2 estén configurados y guardados.
 - El mapping (Tab 3) se aplica a todos los endpoints: las claves del `product` en el response son los `jsonTag`, no los nombres de columna del CSV.
-- Los errores de configuración devuelven HTTP 400; los errores de servidor devuelven HTTP 500.
+- Se aplican los ajustes del Parser: con `hasHeader: "No"` la primera fila se trata como datos; columnas **Number** según el *Decimal Separator* (`"1.234,5"` con `,` → `1234.5`); columnas **Date** según el *Date Format* (tokens `dd`, `MM`, `yyyy`, `yy` → salida `yyyy-MM-dd`; sin formato solo se convierte ISO `yyyy-MM-dd`; lo que no encaja queda como texto); *Empty Value Representation* (lista separada por comas, p. ej. `"NULL, N/A"` → esos valores pasan a `""`).
+- Los errores de configuración devuelven HTTP 400; los errores de red/servidor SMB, HTTP 502; los errores internos, HTTP 500.
+- Un body JSON inválido devuelve HTTP 400 `{ "status": "FAILED", "error": "Invalid JSON body" }`.

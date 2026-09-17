@@ -91,9 +91,11 @@ Con INT5 corriendo bajo `int5svc` (sin permisos sobre el recurso del cliente):
 
 | Authenticator | Credenciales | Resultado esperado |
 |---------------|--------------|--------------------|
-| Desmarcado | — | ❌ "La carpeta requiere credenciales" |
+| Desmarcado | — | ❌ "FOLDER REQUIRES CREDENTIALS" (o "SERVER OR SHARE NOT REACHABLE", según lo que devuelva Windows) |
 | Marcado | usuario/contraseña válidos | ✅ Lee el archivo |
-| Marcado | contraseña incorrecta | ❌ Authentication failed |
+| Marcado | contraseña incorrecta | ❌ "AUTHENTICATION FAILED" (sin reintentos, para no bloquear la cuenta) |
+
+> La sesión SMB que abre `net use` con credenciales sigue activa en esa sesión de Windows hasta cerrar sesión o reiniciar (producción la reutiliza). Para probar "Desmarcado" después de una prueba con credenciales, cierra antes esa sesión: `net use \\servidor\recurso /delete` (o reinicia la sesión de `int5svc`).
 
 > **`int5svc` es solo para pruebas en desarrollo.** En el kiosco NO se usa: ahí INT5 corre bajo el usuario del kiosco, que ya es ajeno al cliente.
 

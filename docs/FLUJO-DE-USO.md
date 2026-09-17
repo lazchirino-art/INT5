@@ -31,20 +31,22 @@ Validation → Persistence                 → ver el producto / confirmar
 Abrir `http://localhost:3000` → botón **CSV**. Se recorren las 5 pestañas en orden.
 
 ### Pestaña 1 — Connector
-1. Elegir **Network Path**.
+1. Elegir **Network Path** (SFTP aparece deshabilitado: aún no está disponible).
 2. Escribir la **ruta** del recurso (`\\servidor\carpeta`) y el **patrón** del archivo (`*.csv`).
 3. Si la carpeta pide credenciales: marcar **Authentication** y poner usuario/contraseña (y dominio si aplica).
 4. Pulsar **Test Connection**.
    - ✅ **READY** + nombre del archivo detectado → todo bien.
-   - ❌ Mensaje de error (carpeta requiere credenciales, ruta no encontrada, etc.) → corregir y reintentar.
-5. Con READY, pulsar **Save Configuration** → aparece **SAVE: SAVED**.
+   - ❌ Mensaje de error (usuario/contraseña incorrectos, cuenta bloqueada, acceso denegado, carpeta requiere credenciales, servidor no accesible, recurso no encontrado, etc.) → corregir y reintentar.
+5. Con READY, pulsar **Save Configuration** → aparece **SAVE: SAVED** (también al volver a abrir el wizard). Si después se cambia cualquier campo, hay que volver a probar y guardar.
 
 ### Pestaña 2 — Parser
-1. Elegir **delimitador** (`,`, `;`…) y **Has Header** (Sí/No).
+1. Elegir **delimitador** (`,`, `;`…) y **Has Header** (Sí/No). Si hace falta: separador decimal, formato de fecha (p. ej. `dd/MM/yyyy`) y valores que cuentan como vacíos (p. ej. `NULL, N/A`); producción los aplica al importar.
 2. Añadir las **columnas** que interesan: nombre, **índice** (qué columna del archivo) y tipo.
    - Con Has Header = No, los nombres se ponen solos (Column0, Column1…).
-3. Pulsar **Check Configuration** → aparece un **preview** con los datos.
-4. Si el preview es correcto, pulsar **Save** → **STATUS: SAVED**.
+3. Pulsar **Check Configuration** (requiere el Connector guardado) → aparece un **preview** con los datos.
+   - Si el archivo usa otro delimitador distinto del elegido, el Check da **error** (FAILED): corregir el delimitador.
+   - Si una fila no tiene el número de columnas esperado, el error indica qué fila es.
+4. Si el Check es **VALID**, pulsar **Save** → **STATUS: SAVED**. (Save solo se habilita con VALID; si se editan, añaden o quitan columnas, hay que repetir el Check.)
 
 ### Pestaña 3 — Mapping
 1. Se cargan solas las columnas del Parser.
@@ -66,7 +68,7 @@ Abrir `http://localhost:3000` → botón **CSV**. Se recorren las 5 pestañas en
 2. Pulsar **Save** → **PERSISTENCE: SAVED**.
 3. Abajo está el **Sync Log**: el historial de importaciones (al principio vacío).
 
-> Una vez guardado todo, cada vez que se entra al wizard aparece lo configurado. Solo si se cambia el Connector/Parser conviene revisar y volver a guardar Mapping y Validation.
+> Una vez guardado todo, cada vez que se entra al wizard aparece lo configurado. Si se cambian las columnas del Parser o los tags del Mapping, Mapping y Validation muestran **OUTDATED — ... SAVE AGAIN**: hay que revisarlos y volver a guardarlos.
 
 ---
 
@@ -92,7 +94,7 @@ El operador trabaja en la **app de producción**, no en el wizard. Por cada prod
 ## Consultar el historial
 
 - En el wizard, pestaña **Persistence → Sync Log**: tabla con todas las importaciones (fecha, código, resultado, solicitado por, confirmado por, campos, error).
-- Nunca se borra: sirve de auditoría de qué se importó y quién lo hizo.
+- No se borra: sirve de auditoría de qué se importó y quién lo hizo. Cuando el archivo supera 5 MB se guarda aparte (`data/sync-log.<fecha>.json`) y la tabla empieza un historial nuevo.
 
 ---
 

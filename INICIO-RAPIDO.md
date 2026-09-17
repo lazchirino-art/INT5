@@ -45,21 +45,21 @@ O desde el teléfono (misma red): `http://int5.local:3000`
 3. Ingresa el patrón de archivo: `medications_*.csv`
 4. Si la carpeta requiere credenciales, marca **Authentication**
 5. Haz click en **Test Connection**
-6. Si el resultado es **STATUS: READY**, haz click en **Save Configuration**
+6. Si el resultado es **STATUS: READY**, haz click en **Save Configuration** (debe quedar **SAVE: SAVED**; si editas cualquier campo después, hay que volver a probar y guardar)
 
 ### Tab 2 — Parser
 
 1. Configura el delimitador (`,` por defecto)
 2. Indica si el archivo tiene encabezado
 3. Agrega las columnas esperadas con su nombre e índice
-4. Haz click en **Check Configuration** para ver un preview del CSV
-5. Haz click en **Save Configuration**
+4. Haz click en **Check Configuration** para ver un preview del CSV (requiere el Connector guardado)
+5. Haz click en **Save Configuration** (solo se habilita si el Check da **VALID**; editar columnas obliga a repetir el Check)
 
 ### Tab 3 — Mapping
 
 1. La tabla se llena automáticamente con las columnas del parser
 2. Edita el **JSON Tag** de cada columna (nombre que usará la API de salida)
-3. Desmarca **Include** para excluir columnas del response
+3. Elige la **Search Column** (obligatoria): la columna del CSV donde se busca el `productCode`
 4. Haz click en **Save Mapping**
 
 ### Tab 4 — Validation
@@ -87,8 +87,7 @@ POST http://int5:3000/api/product/import
 Content-Type: application/json
 
 {
-  "productCode": "ASP001",
-  "searchColumnIndex": 0
+  "productCode": "PROD-001"
 }
 ```
 
@@ -100,7 +99,7 @@ Respuestas posibles:
 | `NOT_FOUND` | No existe en el CSV |
 | `VALIDATION_FAILED` | Campo requerido vacío — incluye `message` con detalle |
 | `CONFIRMATION_REQUIRED` | Modo manual — reenviar con `"confirmed": true` |
-| `ERROR` | Error de configuración o conexión |
+| `ERROR` | Error de configuración o conexión (HTTP 400 configuración, 502 red/servidor, 500 interno) |
 
 ---
 
@@ -109,8 +108,8 @@ Respuestas posibles:
 | Error | Causa | Solución |
 |-------|-------|----------|
 | `Cannot GET /` | Servidor no está corriendo | `npm start` |
-| `STATUS: FAILED` en Test Connection | Ruta o credenciales incorrectas | Verifica en File Explorer primero |
-| Config no carga al abrir la página | `ENCRYPTION_SECRET` cambió | Vuelve a ingresar la contraseña en Tab 1 y guarda |
+| `STATUS: FAILED` en Test Connection | Ruta o credenciales incorrectas | Lee el mensaje del log (AUTHENTICATION FAILED, ACCESS DENIED, SERVER NOT REACHABLE…) y verifica en File Explorer |
+| Config no carga al abrir la página / import responde 500 "cannot be decrypted" | `ENCRYPTION_SECRET` falta o cambió | Revisa `backend/.env`; vuelve a ingresar la contraseña en Tab 1 y guarda |
 | `Parser not configured` en endpoint | Tab 2 no guardado | Completa y guarda el Parser |
 | Puerto 3000 ocupado | Otra instancia corriendo | `taskkill /F /IM node.exe` en CMD |
 
@@ -121,7 +120,7 @@ Respuestas posibles:
 ```
 INT5/
 ├── server.js               ← Punto de entrada
-├── backend/.env            ← ENCRYPTION_SECRET (no subir al repo)
+├── backend/.env            ← ENCRYPTION_SECRET (se incluye en la entrega)
 ├── config/app-config.json  ← Configuración guardada (auto-generado)
 ├── data/sync-log.json      ← Log de importaciones (auto-generado)
 └── data/products.json      ← Caché de productos (auto-generado)
