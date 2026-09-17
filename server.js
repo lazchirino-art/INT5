@@ -5,19 +5,26 @@
  * Frontend → HTTP → Backend → SMB
  */
 import dotenv from 'dotenv';
-dotenv.config({ path: 'backend/.env' });
-console.log('SECRET:', process.env.ENCRYPTION_SECRET);
 import express from 'express';
 import cors from 'cors';
 import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from 'fs';
+import { dirname, join, resolve, sep } from 'path';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync, renameSync } from 'fs';
 import { networkInterfaces } from 'os';
 import { Bonjour } from 'bonjour-service';
 import NetworkPathHandlerWindows from './backend/network-path-handler-windows.js';
 import CredentialCrypto from './backend/credential-crypto.js';
 import * as csvUtils from './backend/csv-utils.js';
 import { insertSyncLog, getSyncLog, upsertProduct } from './backend/local-db.js';
+
+/** El registro de auditoría nunca debe dejar sin respuesta una petición de producción. */
+function safeSyncLog(entry) {
+  try {
+    insertSyncLog(entry);
+  } catch (err) {
+    console.error('[SYNC LOG] Could not write entry:', err.message);
+  }
+}
 import { fetchProduct, extractFields, getValueByPath } from './backend/api-resp-handler.js';
 
 /** Returns all non-loopback IPv4 addresses with their interface names. */
@@ -36,6 +43,12 @@ function getLocalIPs() {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+// .env relativo al proyecto, no al directorio desde el que se lanza node
+dotenv.config({ path: join(__dirname, 'backend', '.env') });
+if (!process.env.ENCRYPTION_SECRET) {
+  console.error('[STARTUP] ENCRYPTION_SECRET is missing in backend/.env — saved passwords cannot be decrypted.');
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -74,18 +87,28 @@ app.use('/src/styles', express.static(join(__dirname, 'src', 'styles'), {
   }
 }));
 
-app.use('/config', express.static(join(__dirname, 'config'), {
-  setHeaders: (res, path) => {
-    if (path.endsWith('.js') || path.endsWith('.mjs')) {
-      res.setHeader('Content-Type', 'application/javascript');
-    }
-  }
-}));
-
 app.use('/src/pages', express.static(join(__dirname, 'src', 'pages'), { setHeaders: noCache }));
 
 // Servir archivos estáticos generales
 app.use(express.static(join(__dirname, 'src'), { setHeaders: noCache }));
+
+/** Escritura atómica: un corte a mitad no deja el JSON truncado. */
+function writeJsonAtomic(filePath, data) {
+  const tmp = `${filePath}.tmp`;
+  writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf-8');
+  renameSync(tmp, filePath);
+}
+
+/** Quita la contraseña de un objeto de conexión antes de escribirlo en consola. */
+function redactConnection(connection) {
+  if (!connection || typeof connection !== 'object') return connection;
+  return { ...connection, password: connection.password ? '***' : connection.password };
+}
+
+/** El wizard guarda hasHeader como "Yes"/"No"; configuraciones antiguas, como booleano. */
+function parseHasHeader(value) {
+  return value !== 'No' && value !== false;
+}
 
 /**
  * Apply field mapping to a single product object.
@@ -143,7 +166,11 @@ async function withSmbRetries(fn) {
       return await fn();
     } catch (e) {
       lastErr = e;
+      e.attempts = attempt;
       console.warn(`[SMB] Intento ${attempt}/${SMB_MAX_ATTEMPTS} falló: ${e.message}`);
+      // Contraseña incorrecta, archivo inexistente o varios archivos: reintentar
+      // no lo arregla (y con credenciales malas podría bloquear la cuenta).
+      if (e.retryable === false) break;
       if (attempt < SMB_MAX_ATTEMPTS) await sleep(SMB_RETRY_DELAY_MS);
     }
   }
@@ -186,25 +213,38 @@ async function loadProductionContext() {
     throw err;
   }
 
-  let credentialCrypto = null;
-  if (process.env.ENCRYPTION_SECRET) {
-    credentialCrypto = new CredentialCrypto(process.env.ENCRYPTION_SECRET);
+  if (connectorConfig.connectorType && connectorConfig.connectorType !== 'networkPath') {
+    const err = new Error(`Connector type "${connectorConfig.connectorType}" is not supported in production. Use Network Path.`);
+    err.statusCode = 400;
+    throw err;
   }
 
-  let password = connectorConfig.password || null;
-  if (credentialCrypto && password) {
+  // Configuraciones antiguas sin la casilla guardada: se usan las credenciales si existen
+  const useAuth   = connectorConfig.useAuthentication !== false;
+  const useDomain = connectorConfig.useDomain !== false;
+
+  let password = useAuth ? (connectorConfig.password || null) : null;
+  if (password && String(password).startsWith('enc:')) {
+    if (!process.env.ENCRYPTION_SECRET) {
+      const err = new Error('ENCRYPTION_SECRET is missing in backend/.env: the saved password cannot be decrypted.');
+      err.statusCode = 500;
+      throw err;
+    }
     try {
-      password = await credentialCrypto.decrypt(password);
+      password = await new CredentialCrypto(process.env.ENCRYPTION_SECRET).decrypt(password);
     } catch (e) {
-      console.warn('[loadProductionContext] Password decryption failed, using raw value');
+      // Nunca usar el texto cifrado como contraseña (fallaría y podría bloquear la cuenta)
+      const err = new Error('The saved password cannot be decrypted: ENCRYPTION_SECRET does not match the one used to save it.');
+      err.statusCode = 500;
+      throw err;
     }
   }
 
-  const handler = new NetworkPathHandlerWindows(credentialCrypto);
+  const handler = new NetworkPathHandlerWindows();
   const creds = {
-    username: connectorConfig.username || null,
+    username: useAuth ? (connectorConfig.username || null) : null,
     password: password,
-    domain:   connectorConfig.domain   || null
+    domain:   useAuth && useDomain ? (connectorConfig.domain || null) : null
   };
 
   // Acceso al archivo con reintentos (3 intentos, 10 s entre cada uno).
@@ -217,7 +257,7 @@ async function loadProductionContext() {
     fileContent = await withSmbRetries(async () => {
       let filename = connectorConfig.filename;
       if (!filename) {
-        const files    = await handler.listFilesViaPS(connectorConfig.path, creds);
+        const files    = await handler.listFiles(connectorConfig.path, creds);
         const matching = handler.applyPattern(files, connectorConfig.fileNamePattern);
         filename       = handler.selectFile(matching); // lanza si 0 o >1 coincidencias
       }
@@ -233,8 +273,10 @@ async function loadProductionContext() {
     // Los mensajes del handler SMB traen <br> (pensados para el log HTML del
     // wizard). En la API los devolvemos como texto plano.
     const clean = String(e.message || '').replace(/<br\s*\/?>/gi, ' ').replace(/[ \t]+/g, ' ').trim();
-    const err = new Error(`No se pudo leer el archivo tras ${SMB_MAX_ATTEMPTS} intentos: ${clean}`);
-    err.statusCode = 400;
+    const attempts = e.attempts || 1;
+    const err = new Error(`No se pudo leer el archivo (${attempts} ${attempts === 1 ? 'intento' : 'intentos'}): ${clean}`);
+    // Fallo de configuración (credenciales, patrón) → 400; fallo de red/servidor → 502
+    err.statusCode = e.retryable === false ? 400 : 502;
     throw err;
   }
 
@@ -247,7 +289,7 @@ async function loadProductionContext() {
   const rows = csvUtils.parseCSVContent(
     fileContent,
     parserConfig.delimiter  || ',',
-    parserConfig.hasHeader  !== false,
+    parseHasHeader(parserConfig.hasHeader),
     parserConfig.quoteChar  || '"',
     parserConfig.escapeChar || '"'
   );
@@ -308,12 +350,9 @@ app.post('/api/config/save', (req, res) => {
     };
 
     console.log('[CONFIG] Saving configuration...');
-    console.log('[CONFIG] Connection:', mergedConfig.connection);
-    console.log('[CONFIG] Parser:',     mergedConfig.parser);
-    console.log('[CONFIG] Mapping:',    mergedConfig.mapping);
+    console.log('[CONFIG] Connection:', redactConnection(mergedConfig.connection));
 
-    // Guardar configuración en archivo
-    writeFileSync(CONFIG_FILE, JSON.stringify(mergedConfig, null, 2));
+    writeJsonAtomic(CONFIG_FILE, mergedConfig);
 
     console.log('[CONFIG] Configuration saved successfully');
     res.json({ 
@@ -444,7 +483,7 @@ app.post('/test-connection', async (req, res) => {
     }
     
     // Validar formato de ruta
-    if (!path.startsWith('\\\\')) {
+    if (typeof path !== 'string' || !path.startsWith('\\\\')) {
       return res.status(400).json({
         status: 'FAILED',
         file: null,
@@ -501,8 +540,6 @@ app.post('/test-connection', async (req, res) => {
  */
  
 app.post('/api/connector/read-file', async (req, res) => {
-	console.log('🔥 READ FILE CALLED 🔥');
-	console.log('[DEBUG REQUEST BODY]:', req.body);
   try {
     const { connectorType, path, fileNamePattern, username, password, domain, useAuthentication } = req.body;
 
@@ -536,16 +573,10 @@ app.post('/api/connector/read-file', async (req, res) => {
       return res.status(400).json({ error: { message: 'File not found' }, logs: detectResult.logs });
     }
 
-    // Decrypt password if needed before passing to readFile
+    // detect() ya comprobó que la contraseña se descifra correctamente
     let decryptedPassword = password;
     if (credentialCrypto && password) {
-      try {
-        decryptedPassword = await credentialCrypto.decrypt(password);
-      } catch (error) {
-        console.error('[API] Decryption error:', error.message);
-        // If decryption fails, try with original password
-        decryptedPassword = password;
-      }
+      decryptedPassword = await credentialCrypto.decrypt(password);
     }
     
     const fileContent = await handler.readFile({
@@ -557,13 +588,14 @@ app.post('/api/connector/read-file', async (req, res) => {
     });
 
     if (!fileContent) {
-      return res.status(400).json({ error: { message: 'Failed to read file' } });
+      return res.status(400).json({ error: { message: 'The file is empty' } });
     }
 
     res.json({ content: fileContent, filename: detectResult.file, size: fileContent.length, encoding: handler.lastEncoding || 'UTF-8' });
   } catch (error) {
     console.error('[API ERROR]', error.message);
-    res.status(500).json({ error: error.message });
+    const message = String(error.message || '').replace(/<br\s*\/?>/gi, ' ').trim();
+    res.status(error.retryable === false ? 400 : 502).json({ error: { message } });
   }
 });
 
@@ -601,7 +633,7 @@ app.post('/api/product/search', async (req, res) => {
     const { parserConfig, mappingConfig, rows } = await loadProductionContext();
 
     console.log(`[PRODUCT SEARCH] Searching for: ${productId}`);
-    const result = csvUtils.searchProductInRows(rows, productId, searchColumnIndex, parserConfig.columns);
+    const result = csvUtils.searchProductInRows(rows, productId, searchColumnIndex, parserConfig.columns, parserConfig);
 
     if (result.found && result.product) {
       result.product = applyMapping(result.product, mappingConfig);
@@ -650,7 +682,7 @@ app.post('/api/product/search-advanced', async (req, res) => {
     const criteria = { columnIndex: col.index, value: searchCriteria.value, operator };
 
     console.log(`[ADVANCED SEARCH] ${searchCriteria.columnName}[${col.index}] ${operator} "${searchCriteria.value}"`);
-    const result = csvUtils.searchProductAdvanced(rows, criteria, parserConfig.columns);
+    const result = csvUtils.searchProductAdvanced(rows, criteria, parserConfig.columns, parserConfig);
 
     if (result.found && result.product) {
       result.product = applyMapping(result.product, mappingConfig);
@@ -687,7 +719,7 @@ app.post('/api/product/search-multiple', async (req, res) => {
     const { parserConfig, mappingConfig, rows } = await loadProductionContext();
 
     console.log(`[MULTIPLE SEARCH] Searching for ${productIds.length} products`);
-    const result = csvUtils.searchMultipleProducts(rows, productIds, searchColumnIndex, parserConfig.columns);
+    const result = csvUtils.searchMultipleProducts(rows, productIds, searchColumnIndex, parserConfig.columns, parserConfig);
 
     if (Array.isArray(result.products)) {
       result.products = result.products.map(item => ({
@@ -739,7 +771,7 @@ app.post('/api/product/filter', async (req, res) => {
     }
 
     console.log(`[FILTER] Applying ${filters.length} filter(s)`);
-    const result = csvUtils.filterProducts(rows, filterCriteria, parserConfig.columns);
+    const result = csvUtils.filterProducts(rows, filterCriteria, parserConfig.columns, parserConfig);
 
     result.products = applyMappingToList(result.products, mappingConfig);
 
@@ -762,7 +794,7 @@ app.get('/api/product/all', async (req, res) => {
     const { parserConfig, mappingConfig, rows } = await loadProductionContext();
 
     console.log('[GET ALL] Loading all products');
-    const result = csvUtils.getAllProducts(rows, parserConfig.columns);
+    const result = csvUtils.getAllProducts(rows, parserConfig.columns, parserConfig);
 
     result.products = applyMappingToList(result.products, mappingConfig);
 
@@ -810,7 +842,7 @@ app.post('/api/product/import', async (req, res) => {
   try {
     context = await loadProductionContext();
   } catch (err) {
-    insertSyncLog({ timestamp, productCode, result: 'ERROR', fields: null, error: err.message, requestedBy, confirmedBy });
+    safeSyncLog({ timestamp, productCode, result: 'ERROR', fields: null, error: err.message, requestedBy, confirmedBy });
     return res.status(err.statusCode || 500).json({ error: err.message, status: 'ERROR' });
   }
 
@@ -821,7 +853,7 @@ app.post('/api/product/import', async (req, res) => {
   const effectiveSearchIndex = (searchColumnIndex ?? config.searchColumnIndex);
   if (effectiveSearchIndex === undefined || effectiveSearchIndex === null) {
     const msg = 'Search column not configured. Set it in the Mapping tab (Search Column).';
-    insertSyncLog({ timestamp, productCode, result: 'ERROR', fields: null, error: msg, requestedBy, confirmedBy });
+    safeSyncLog({ timestamp, productCode, result: 'ERROR', fields: null, error: msg, requestedBy, confirmedBy });
     return res.status(400).json({ error: msg, status: 'ERROR' });
   }
   const validationRules = Array.isArray(config.validation) ? config.validation : [];
@@ -830,10 +862,16 @@ app.post('/api/product/import', async (req, res) => {
   const validationLevel = persistence.validationLevel || 'superior';
 
   // ── Search CSV ────────────────────────────────────────────────────────
-  const searchResult = csvUtils.searchProductInRows(rows, productCode, effectiveSearchIndex, parserConfig.columns);
+  const searchResult = csvUtils.searchProductInRows(rows, productCode, effectiveSearchIndex, parserConfig.columns, parserConfig);
+
+  if (searchResult.error) {
+    const msg = `${searchResult.error}. Review the Search Column in the Mapping tab.`;
+    safeSyncLog({ timestamp, productCode, result: 'ERROR', fields: null, error: msg, requestedBy, confirmedBy });
+    return res.status(500).json({ error: msg, status: 'ERROR' });
+  }
 
   if (!searchResult.found || !searchResult.product) {
-    insertSyncLog({ timestamp, productCode, result: 'NOT_FOUND', fields: null, error: '', requestedBy, confirmedBy });
+    safeSyncLog({ timestamp, productCode, result: 'NOT_FOUND', fields: null, error: '', requestedBy, confirmedBy });
     return res.json({ status: 'NOT_FOUND', productCode });
   }
 
@@ -845,7 +883,7 @@ app.post('/api/product/import', async (req, res) => {
     const value = mappedProduct[rule.jsonTag];
     if (value === undefined || value === null || String(value).trim() === '') {
       const message = `Product found in CSV but with incomplete data — field [${rule.jsonTag}] is empty`;
-      insertSyncLog({ timestamp, productCode, result: 'VALIDATION_FAILED', fields: mappedProduct, error: message, requestedBy, confirmedBy });
+      safeSyncLog({ timestamp, productCode, result: 'VALIDATION_FAILED', fields: mappedProduct, error: message, requestedBy, confirmedBy });
       return res.json({ status: 'VALIDATION_FAILED', message, productCode });
     }
   }
@@ -868,7 +906,7 @@ app.post('/api/product/import', async (req, res) => {
     console.warn('[IMPORT] Cache write failed:', cacheErr.message);
   }
 
-  insertSyncLog({ timestamp, productCode, result: 'FOUND', fields: mappedProduct, error: '', requestedBy, confirmedBy });
+  safeSyncLog({ timestamp, productCode, result: 'FOUND', fields: mappedProduct, error: '', requestedBy, confirmedBy });
 
   return res.json({
     status:    'IMPORTED',
@@ -898,7 +936,8 @@ app.get('/api/sync-log', (req, res) => {
   try {
     const page  = Math.max(1, parseInt(req.query.page,  10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
-    const result = getSyncLog({ page, limit });
+    const source = typeof req.query.source === 'string' ? req.query.source : undefined;
+    const result = getSyncLog({ page, limit, source });
     res.json(result);
   } catch (err) {
     console.error('[SYNC LOG ERROR]', err.message);
@@ -1024,12 +1063,16 @@ app.post('/api/product/import-api', async (req, res) => {
   try {
     rawJson = await fetchProduct(connector, productCode);
   } catch (err) {
-    insertSyncLog({ timestamp, productCode, result: 'NOT_FOUND', fields: null, error: err.message, source: 'apiResp', requestedBy, confirmedBy });
-    return res.json({ status: 'NOT_FOUND', productCode, error: err.message });
+    if (err.httpStatus === 404) {
+      safeSyncLog({ timestamp, productCode, result: 'NOT_FOUND', fields: null, error: err.message, source: 'apiResp', requestedBy, confirmedBy });
+      return res.json({ status: 'NOT_FOUND', productCode, error: err.message });
+    }
+    safeSyncLog({ timestamp, productCode, result: 'ERROR', fields: null, error: err.message, source: 'apiResp', requestedBy, confirmedBy });
+    return res.status(502).json({ status: 'ERROR', productCode, error: err.message });
   }
 
   if (!rawJson || typeof rawJson !== 'object') {
-    insertSyncLog({ timestamp, productCode, result: 'NOT_FOUND', fields: null, error: 'Empty or non-JSON response', source: 'apiResp', requestedBy, confirmedBy });
+    safeSyncLog({ timestamp, productCode, result: 'NOT_FOUND', fields: null, error: 'Empty or non-JSON response', source: 'apiResp', requestedBy, confirmedBy });
     return res.json({ status: 'NOT_FOUND', productCode });
   }
 
@@ -1061,7 +1104,7 @@ app.post('/api/product/import-api', async (req, res) => {
     const value = mappedProduct[rule.jsonTag];
     if (value === undefined || value === null || String(value).trim() === '') {
       const message = `Product found in API but with incomplete data — field [${rule.jsonTag}] is empty`;
-      insertSyncLog({ timestamp, productCode, result: 'VALIDATION_FAILED', fields: mappedProduct, error: message, source: 'apiResp', requestedBy, confirmedBy });
+      safeSyncLog({ timestamp, productCode, result: 'VALIDATION_FAILED', fields: mappedProduct, error: message, source: 'apiResp', requestedBy, confirmedBy });
       return res.json({ status: 'VALIDATION_FAILED', message, productCode });
     }
   }
@@ -1084,7 +1127,7 @@ app.post('/api/product/import-api', async (req, res) => {
     console.warn('[IMPORT-API] Cache write failed:', cacheErr.message);
   }
 
-  insertSyncLog({ timestamp, productCode, result: 'FOUND', fields: mappedProduct, error: '', source: 'apiResp', requestedBy, confirmedBy });
+  safeSyncLog({ timestamp, productCode, result: 'FOUND', fields: mappedProduct, error: '', source: 'apiResp', requestedBy, confirmedBy });
 
   return res.json({
     status:    'IMPORTED',
@@ -1125,9 +1168,13 @@ app.get('/', (req, res) => {
  * GET /:page
  * Serve other pages
  */
+const PAGES_DIR = resolve(__dirname, 'src', 'pages');
 app.get('/:page', (req, res) => {
-  const page = req.params.page;
-  const filePath = join(__dirname, 'src', 'pages', decodeURIComponent(page));
+  // Express ya decodificó el parámetro: no volver a decodificar
+  const filePath = resolve(PAGES_DIR, req.params.page);
+  if (!filePath.startsWith(PAGES_DIR + sep)) {
+    return res.status(404).send('Page not found');
+  }
   res.sendFile(filePath, (err) => {
     if (err) {
       res.status(404).send('Page not found');
@@ -1139,6 +1186,9 @@ app.get('/:page', (req, res) => {
  * Error handling
  */
 app.use((err, req, res, next) => {
+  if (err.type === 'entity.parse.failed') {
+    return res.status(400).json({ status: 'FAILED', error: 'Invalid JSON body' });
+  }
   console.error('[ERROR]', err);
   res.status(500).json({
     status: 'FAILED',
@@ -1157,7 +1207,6 @@ app.listen(PORT, '0.0.0.0', () => {
   const bonjour = new Bonjour();
   bonjour.publish({ name: 'INT5', type: 'http', port: PORT, host: 'int5.local' });
 
-  console.log('🔥 ESTE ES MI SERVER REAL 🔥');
   console.log(`\n${'='.repeat(50)}`);
   console.log(`Backend Server`);
   console.log(`${'='.repeat(50)}`);
@@ -1177,25 +1226,15 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`✔ Product API: POST /api/product/filter`);
   console.log(`✔ Product API: GET /api/product/all`);
   console.log(`✔ Product API: GET /api/product/stats`);
+  console.log(`✔ Product API: GET /api/product/search-column`);
   console.log(`✔ Import API:  POST /api/product/import`);
+  console.log(`✔ Import API:  POST /api/product/import-api`);
+  console.log(`✔ API-RESP:    POST /api/apiResp/test-connection`);
+  console.log(`✔ Connector:   POST /api/connector/read-file`);
   console.log(`✔ Sync Log:    GET /api/sync-log`);
   console.log(`✔ Config file: ${CONFIG_FILE}`);
   console.log(`\n${'='.repeat(50)}\n`);
 });
-
-// Load configuration on startup
-console.log('[CONFIG] Loading saved configuration on startup...');
-if (existsSync(CONFIG_FILE)) {
-  try {
-    const configData = readFileSync(CONFIG_FILE, 'utf-8');
-    const config = JSON.parse(configData);
-    console.log('[CONFIG] Configuration loaded from file:', CONFIG_FILE);
-  } catch (error) {
-    console.error('[CONFIG] Error loading configuration:', error.message);
-  }
-} else {
-  console.log('[CONFIG] No saved configuration file found');
-}
 
 // Handle errors
 process.on('unhandledRejection', (reason, promise) => {
@@ -1206,4 +1245,3 @@ process.on('uncaughtException', (error) => {
   console.error('[UNCAUGHT EXCEPTION]', error);
   process.exit(1);
 });
-console.log('CONFIG FILE PATH:', CONFIG_FILE);

@@ -4,7 +4,6 @@
  * Uses crypto.subtle for compatibility with frontend encryption
  */
 
-import crypto from 'crypto';
 import { webcrypto } from 'crypto';
 
 class CredentialCrypto {
@@ -54,26 +53,6 @@ class CredentialCrypto {
       console.error('[CredentialCrypto] Decryption error:', error.message);
       throw new Error(`Failed to decrypt credential: ${error.message}`);
     }
-  }
-
-  /**
-   * Decrypt all sensitive fields in a config object
-   */
-  async decryptConfig(config, sensitiveFields) {
-    const decrypted = { ...config };
-
-    for (const field of sensitiveFields) {
-      if (decrypted[field]) {
-        try {
-          decrypted[field] = await this.decrypt(decrypted[field]);
-        } catch (error) {
-          console.error(`[CredentialCrypto] Failed to decrypt ${field}:`, error.message);
-          throw error;
-        }
-      }
-    }
-
-    return decrypted;
   }
 
   /**

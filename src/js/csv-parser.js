@@ -48,15 +48,18 @@ class CSVParser {
 
       // Check if detected delimiter matches configured
       const configDelimiter = parserConfig.delimiter || ',';
-      if (delimiterResult.delimiter !== configDelimiter) {
-        warnings.push(`Detected delimiter '${delimiterResult.delimiter}' differs from configured '${configDelimiter}'`);
-        logs.push({ type: 'warning', message: `Delimiter mismatch: detected '${delimiterResult.delimiter}' vs configured '${configDelimiter}'` });
+      const configColumnCount = this.parseCSVLine(lines[0], configDelimiter, '"', '"').length;
+      // Solo es error si el detectado separa realmente más columnas (evita falsos
+      // positivos en archivos de una sola columna, donde todos empatan)
+      if (delimiterResult.delimiter !== configDelimiter && delimiterResult.columnCount > configColumnCount) {
+        errors.push(`Detected delimiter '${delimiterResult.delimiter}' differs from configured '${configDelimiter}'`);
+        logs.push({ type: 'error', message: `Delimiter mismatch: detected '${delimiterResult.delimiter}' vs configured '${configDelimiter}' — change the Delimiter setting` });
       } else {
         logs.push({ type: 'success', message: `Delimiter matches configuration` });
       }
 
-      // Use detected delimiter for parsing
-      const delimiter = delimiterResult.delimiter;
+      // Parsear con el delimitador CONFIGURADO: es el que usa producción
+      const delimiter = configDelimiter;
       const quoteChar = parserConfig.quoteChar || '"';
       const escapeChar = parserConfig.escapeChar || '"';
 
@@ -109,7 +112,7 @@ class CSVParser {
       if (!rowConsistencyError) {
         logs.push({ type: 'success', message: `All rows have consistent column count` });
       } else {
-        logs.push({ type: 'error', message: `Row consistency check failed` });
+        logs.push({ type: 'error', message: `Row consistency check failed — ${errors[errors.length - 1]}` });
       }
 
       // 8. Validate quote character
@@ -176,7 +179,7 @@ class CSVParser {
     } catch (error) {
       console.error('[CSVParser] Error:', error);
       errors.push(`Unexpected error: ${error.message}`);
-      return this.buildResult('FAILED', logs, errors, errors);
+      return this.buildResult('FAILED', logs, errors, warnings);
     }
   }
 
@@ -373,8 +376,9 @@ class CSVParser {
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to read file');
+        const body = await response.json().catch(() => ({}));
+        const detail = typeof body.error === 'string' ? body.error : body.error?.message;
+        throw new Error(detail || body.message || `Failed to read file (HTTP ${response.status})`);
       }
 
       const data = await response.json();
@@ -398,13 +402,12 @@ class CSVParser {
       const char = line[i];
       const nextChar = line[i + 1];
 
-      if (char === quoteChar) {
-        if (inQuotes && nextChar === escapeChar) {
-          current += quoteChar;
-          i++;
-        } else {
-          inQuotes = !inQuotes;
-        }
+      if (inQuotes && char === escapeChar && nextChar === quoteChar) {
+        // Comilla escapada: "" (escape = comilla) o \" (escape distinto)
+        current += quoteChar;
+        i++;
+      } else if (char === quoteChar) {
+        inQuotes = !inQuotes;
       } else if (char === delimiter && !inQuotes) {
         fields.push(current.trim());
         current = '';
@@ -421,6 +424,10 @@ class CSVParser {
    * Build result object
    */
   static buildResult(status, logs, errors, warnings) {
+    // Que los errores (p. ej. fallo de lectura SMB) lleguen al log visible
+    errors.forEach(message => {
+      if (!logs.some(l => l.message === message)) logs.push({ type: 'error', message });
+    });
     return {
       status,
       logs,

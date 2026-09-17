@@ -31,13 +31,12 @@ export function parseCSVLine(line, delimiter = ',', quoteChar = '"', escapeChar 
     const char = line[i];
     const nextChar = line[i + 1];
 
-    if (char === quoteChar) {
-      if (inQuotes && nextChar === escapeChar) {
-        current += quoteChar;
-        i++;
-      } else {
-        inQuotes = !inQuotes;
-      }
+    if (inQuotes && char === escapeChar && nextChar === quoteChar) {
+      // Comilla escapada: "" (escape = comilla) o \" (escape distinto)
+      current += quoteChar;
+      i++;
+    } else if (char === quoteChar) {
+      inQuotes = !inQuotes;
     } else if (char === delimiter && !inQuotes) {
       fields.push(current.trim());
       current = '';
@@ -89,58 +88,76 @@ export function parseCSVContent(
 }
 
 /**
- * Extract header row from CSV content
- * 
- * @param {string} content - CSV content
- * @param {string} delimiter - Field delimiter
- * @param {string} quoteChar - Quote character
- * @param {string} escapeChar - Escape character
- * 
- * @returns {Array<string>} Header fields
+ * Convierte una fecha según el formato configurado (tokens dd, MM, yyyy, yy)
+ * a texto ISO yyyy-MM-dd, sin pasar por Date/zonas horarias.
+ * Sin formato solo se acepta ISO. Devuelve null si no encaja.
  */
-export function extractHeader(
-  content,
-  delimiter = ',',
-  quoteChar = '"',
-  escapeChar = '"'
-) {
-  if (!content || typeof content !== 'string') {
-    return [];
-  }
+export function parseDateWithFormat(value, dateFormat = '') {
+  const text = String(value).trim();
+  const fmt = (dateFormat || 'yyyy-MM-dd').trim();
+  const order = [];
+  const pattern = fmt
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/yyyy|yy|MM|M|dd|d/g, token => {
+      order.push(token[0]);
+      if (token === 'yyyy') return '(\\d{4})';
+      if (token === 'yy') return '(\\d{2})';
+      return '(\\d{1,2})';
+    });
+  const match = new RegExp(`^${pattern}$`).exec(text);
+  if (!match) return null;
 
-  const lines = content.split('\n');
-  if (lines.length === 0) {
-    return [];
-  }
-
-  return parseCSVLine(lines[0], delimiter, quoteChar, escapeChar);
+  let year, month, day;
+  order.forEach((kind, i) => {
+    const n = parseInt(match[i + 1], 10);
+    if (kind === 'y') year = match[i + 1].length === 2 ? 2000 + n : n;
+    if (kind === 'M') month = n;
+    if (kind === 'd') day = n;
+  });
+  if (!year || !month || !day || month > 12 || day > 31) return null;
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
 /**
- * Format value according to data type
- * 
+ * Format value according to data type and parser settings
+ *
  * @param {string} value - Raw value from CSV
  * @param {string} dataType - Data type (String, Number, Date)
- * 
- * @returns {string|number|Date} Formatted value
+ * @param {Object} parserConfig - { decimalSeparator, dateFormat, emptyValue }
+ *
+ * @returns {string|number} Formatted value
  */
-export function formatValue(value, dataType = 'String') {
-  if (!value || value === '') {
-    return '';
-  }
+export function formatValue(value, dataType = 'String', parserConfig = {}) {
+  if (value === undefined || value === null) return '';
+  const text = String(value).trim();
+  if (text === '') return '';
+
+  // "Empty Value Representation": lista separada por comas (p. ej. "NULL, N/A")
+  const emptyValues = String(parserConfig.emptyValue || '')
+    .split(',')
+    .map(v => v.trim())
+    .filter(Boolean);
+  if (emptyValues.includes(text)) return '';
 
   switch (dataType) {
-    case 'Number':
-      const num = parseFloat(value);
-      return isNaN(num) ? value : num;
-    
+    case 'Number': {
+      const decimalSeparator = parserConfig.decimalSeparator || '.';
+      let normalized = text.replace(/\s/g, '');
+      if (decimalSeparator === ',') {
+        normalized = normalized.replace(/\./g, '').replace(',', '.');
+      } else {
+        normalized = normalized.replace(/,/g, '');
+      }
+      const num = Number(normalized);
+      return normalized !== '' && Number.isFinite(num) ? num : text;
+    }
+
     case 'Date':
-      const date = new Date(value);
-      return isNaN(date.getTime()) ? value : date.toISOString().split('T')[0];
-    
+      return parseDateWithFormat(text, parserConfig.dateFormat) ?? text;
+
     case 'String':
     default:
-      return String(value).trim();
+      return text;
   }
 }
 
@@ -157,7 +174,7 @@ export function formatValue(value, dataType = 'String') {
  * 
  * @returns {Object} Object with only configured columns
  */
-export function rowToObject(row, configuredColumns) {
+export function rowToObject(row, configuredColumns, parserConfig = {}) {
   const obj = {};
 
   if (!Array.isArray(configuredColumns) || configuredColumns.length === 0) {
@@ -175,7 +192,7 @@ export function rowToObject(row, configuredColumns) {
     const rawValue = row[colIndex] || '';
     
     // Format according to data type
-    const formattedValue = formatValue(rawValue, dataType);
+    const formattedValue = formatValue(rawValue, dataType, parserConfig);
     
     // Add to object in order
     obj[colName] = formattedValue;
@@ -194,7 +211,7 @@ export function rowToObject(row, configuredColumns) {
  * 
  * @returns {Object} Search result with only configured columns
  */
-export function searchProductInRows(rows, productId, searchColumnIndex, configuredColumns) {
+export function searchProductInRows(rows, productId, searchColumnIndex, configuredColumns, parserConfig = {}) {
   const startTime = Date.now();
 
   if (!Array.isArray(rows) || rows.length === 0) {
@@ -231,7 +248,7 @@ export function searchProductInRows(rows, productId, searchColumnIndex, configur
 
     if (cellValue === searchValue) {
       // Convert to object using ONLY configured columns
-      const product = rowToObject(row, configuredColumns);
+      const product = rowToObject(row, configuredColumns, parserConfig);
 
       return {
         found: true,
@@ -262,7 +279,7 @@ export function searchProductInRows(rows, productId, searchColumnIndex, configur
  * 
  * @returns {Object} Search result
  */
-export function searchProductAdvanced(rows, criteria, configuredColumns) {
+export function searchProductAdvanced(rows, criteria, configuredColumns, parserConfig = {}) {
   const startTime = Date.now();
 
   if (!Array.isArray(rows) || rows.length === 0) {
@@ -324,7 +341,7 @@ export function searchProductAdvanced(rows, criteria, configuredColumns) {
     }
 
     if (matches) {
-      const product = rowToObject(row, configuredColumns);
+      const product = rowToObject(row, configuredColumns, parserConfig);
 
       return {
         found: true,
@@ -355,7 +372,7 @@ export function searchProductAdvanced(rows, criteria, configuredColumns) {
  * 
  * @returns {Object} Search results
  */
-export function searchMultipleProducts(rows, productIds, searchColumnIndex, configuredColumns) {
+export function searchMultipleProducts(rows, productIds, searchColumnIndex, configuredColumns, parserConfig = {}) {
   const startTime = Date.now();
   const results = [];
 
@@ -370,7 +387,7 @@ export function searchMultipleProducts(rows, productIds, searchColumnIndex, conf
   }
 
   productIds.forEach((productId) => {
-    const result = searchProductInRows(rows, productId, searchColumnIndex, configuredColumns);
+    const result = searchProductInRows(rows, productId, searchColumnIndex, configuredColumns, parserConfig);
     if (result.found) {
       results.push(result);
     }
@@ -394,7 +411,7 @@ export function searchMultipleProducts(rows, productIds, searchColumnIndex, conf
  * 
  * @returns {Object} Filtered results
  */
-export function filterProducts(rows, filterCriteria, configuredColumns) {
+export function filterProducts(rows, filterCriteria, configuredColumns, parserConfig = {}) {
   const startTime = Date.now();
   const results = [];
 
@@ -420,7 +437,7 @@ export function filterProducts(rows, filterCriteria, configuredColumns) {
 
     if (matches) {
       results.push({
-        product: rowToObject(row, configuredColumns),
+        product: rowToObject(row, configuredColumns, parserConfig),
         rowIndex: idx
       });
     }
@@ -442,7 +459,7 @@ export function filterProducts(rows, filterCriteria, configuredColumns) {
  * 
  * @returns {Object} All products
  */
-export function getAllProducts(rows, configuredColumns) {
+export function getAllProducts(rows, configuredColumns, parserConfig = {}) {
   const startTime = Date.now();
   const results = [];
 
@@ -457,7 +474,7 @@ export function getAllProducts(rows, configuredColumns) {
 
   rows.forEach((row, idx) => {
     results.push({
-      product: rowToObject(row, configuredColumns),
+      product: rowToObject(row, configuredColumns, parserConfig),
       rowIndex: idx
     });
   });
@@ -467,119 +484,6 @@ export function getAllProducts(rows, configuredColumns) {
     totalFound: results.length,
     totalRows: rows.length,
     searchTime: Date.now() - startTime
-  };
-}
-
-/**
- * Create index for fast lookups
- * 
- * @param {Array<Array<string>>} rows - Parsed CSV rows
- * @param {number} columnIndex - Column to index
- * 
- * @returns {Object} Index map
- */
-export function createIndex(rows, columnIndex) {
-  const index = {};
-
-  rows.forEach((row, idx) => {
-    if (columnIndex < row.length) {
-      const key = row[columnIndex].toString().trim();
-      if (!index[key]) {
-        index[key] = [];
-      }
-      index[key].push(idx);
-    }
-  });
-
-  return index;
-}
-
-/**
- * Search using index (O(1) lookup)
- * 
- * @param {Object} index - Index map from createIndex()
- * @param {Array<Array<string>>} rows - Parsed CSV rows
- * @param {string} searchValue - Value to search
- * @param {Array<Object>} configuredColumns - Configured columns
- * 
- * @returns {Object} Search result
- */
-export function searchWithIndex(index, rows, searchValue, configuredColumns) {
-  const startTime = Date.now();
-  const key = searchValue.toString().trim();
-
-  if (!index[key] || index[key].length === 0) {
-    return {
-      found: false,
-      product: null,
-      rowIndex: -1,
-      totalRows: rows.length,
-      searchTime: Date.now() - startTime
-    };
-  }
-
-  const rowIndex = index[key][0];
-  const row = rows[rowIndex];
-
-  return {
-    found: true,
-    product: rowToObject(row, configuredColumns),
-    rowIndex: rowIndex,
-    totalRows: rows.length,
-    searchTime: Date.now() - startTime
-  };
-}
-
-/**
- * Validate CSV structure
- * 
- * @param {Array<Array<string>>} rows - Parsed CSV rows
- * @param {Array<Object>} configuredColumns - Configured columns
- * 
- * @returns {Object} Validation result
- */
-export function validateCSVStructure(rows, configuredColumns) {
-  const errors = [];
-  const warnings = [];
-
-  if (!Array.isArray(rows) || rows.length === 0) {
-    errors.push('No rows found in CSV');
-    return { valid: false, errors, warnings };
-  }
-
-  // Check if all configured column indices exist
-  configuredColumns.forEach((col) => {
-    if (col.index < 0) {
-      errors.push(`Column "${col.name}": Invalid index ${col.index}`);
-    }
-
-    // Check if index exists in at least one row
-    let indexExists = false;
-    for (const row of rows) {
-      if (col.index < row.length) {
-        indexExists = true;
-        break;
-      }
-    }
-
-    if (!indexExists) {
-      errors.push(`Column "${col.name}": Index ${col.index} not found in any row`);
-    }
-  });
-
-  // Check for inconsistent row lengths
-  const lengths = rows.map(r => r.length);
-  const minLength = Math.min(...lengths);
-  const maxLength = Math.max(...lengths);
-
-  if (minLength !== maxLength) {
-    warnings.push(`Inconsistent row lengths: ${minLength} to ${maxLength}`);
-  }
-
-  return {
-    valid: errors.length === 0,
-    errors,
-    warnings
   };
 }
 
@@ -601,21 +505,3 @@ export function getCSVStatistics(rows, configuredColumns) {
     dataTypes: configuredColumns.map(c => c.dataType)
   };
 }
-
-// Export all functions
-export default {
-  parseCSVLine,
-  parseCSVContent,
-  extractHeader,
-  formatValue,
-  rowToObject,
-  searchProductInRows,
-  searchProductAdvanced,
-  searchMultipleProducts,
-  filterProducts,
-  getAllProducts,
-  createIndex,
-  searchWithIndex,
-  validateCSVStructure,
-  getCSVStatistics
-};

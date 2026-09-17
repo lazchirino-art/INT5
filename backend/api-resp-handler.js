@@ -9,6 +9,13 @@
  *   - Get a value from a JSON object by dot-path
  */
 
+const REQUEST_TIMEOUT_MS = 10000;
+
+/** URL sin query string para mensajes/logs (puede llevar claves de API). */
+function redactUrl(url) {
+  return url.split('?')[0];
+}
+
 /**
  * Fetch a product from an external REST API.
  *
@@ -51,17 +58,27 @@ export async function fetchProduct(connector, productCode) {
   const options = { method: method.toUpperCase(), headers };
 
   if (method.toUpperCase() === 'POST' && bodyTemplate) {
-    options.body = bodyTemplate.replace(/\{productCode\}/g, productCode);
+    // Escapado JSON: un código con comillas no rompe el cuerpo
+    const jsonSafeCode = JSON.stringify(String(productCode)).slice(1, -1);
+    options.body = bodyTemplate.replace(/\{productCode\}/g, jsonSafeCode);
   }
 
-  const response = await fetch(url, options);
+  let response;
+  try {
+    response = await fetch(url, { ...options, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+  } catch (err) {
+    const reason = err.name === 'TimeoutError' ? `timeout after ${REQUEST_TIMEOUT_MS / 1000} s` : err.message;
+    throw new Error(`API request failed (${reason}) — URL: ${redactUrl(url)}`);
+  }
 
   if (!response.ok) {
-    throw new Error(`API responded with ${response.status} ${response.statusText} — URL: ${url}`);
+    const err = new Error(`API responded with ${response.status} ${response.statusText} — URL: ${redactUrl(url)}`);
+    err.httpStatus = response.status;
+    throw err;
   }
 
   const contentType = response.headers.get('content-type') || '';
-  if (!contentType.includes('application/json')) {
+  if (!/[/+]json\b/i.test(contentType)) {
     const text = await response.text();
     throw new Error(`API returned non-JSON response (${contentType}): ${text.slice(0, 200)}`);
   }

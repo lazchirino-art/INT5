@@ -3,11 +3,11 @@
  * No external npm dependencies — only Node built-ins.
  *
  * Files:
- *   data/sync-log.json   — append-only array of log entries (never purged)
+ *   data/sync-log.json   — array of log entries (se archiva al superar el tamaño máximo)
  *   data/products.json   — key/value cache keyed by productCode
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, statSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -18,6 +18,9 @@ const DATA_DIR       = join(__dirname, '..', 'data');
 const SYNC_LOG_FILE  = join(DATA_DIR, 'sync-log.json');
 const PRODUCTS_FILE  = join(DATA_DIR, 'products.json');
 
+// Al superar este tamaño, el log actual se archiva (sync-log.<fecha>.json) y se empieza uno nuevo
+const SYNC_LOG_MAX_BYTES = 5 * 1024 * 1024;
+
 // ── Helpers ───────────────────────────────────────────────────────────────
 
 function ensureDataDir() {
@@ -26,18 +29,41 @@ function ensureDataDir() {
   }
 }
 
+function stamp() {
+  return new Date().toISOString().replace(/[:.]/g, '-');
+}
+
+/**
+ * Lee un JSON. Si está corrupto NO se sobrescribe con el valor por defecto:
+ * se aparta como <archivo>.corrupt-<fecha> para no perder el historial.
+ */
 function readJsonFile(filePath, defaultValue) {
+  if (!existsSync(filePath)) return defaultValue;
+  const raw = readFileSync(filePath, 'utf-8');
   try {
-    if (!existsSync(filePath)) return defaultValue;
-    return JSON.parse(readFileSync(filePath, 'utf-8'));
+    return JSON.parse(raw);
   } catch {
+    const corruptPath = `${filePath}.corrupt-${stamp()}`;
+    renameSync(filePath, corruptPath);
+    console.error(`[local-db] Corrupted JSON moved to ${corruptPath}`);
     return defaultValue;
   }
 }
 
+/** Escritura atómica: un corte a mitad no deja el archivo truncado. */
 function writeJsonFile(filePath, data) {
   ensureDataDir();
-  writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+  const tmp = `${filePath}.tmp`;
+  writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf-8');
+  renameSync(tmp, filePath);
+}
+
+function rotateSyncLogIfNeeded() {
+  if (!existsSync(SYNC_LOG_FILE)) return;
+  if (statSync(SYNC_LOG_FILE).size < SYNC_LOG_MAX_BYTES) return;
+  const archivePath = join(DATA_DIR, `sync-log.${stamp()}.json`);
+  renameSync(SYNC_LOG_FILE, archivePath);
+  console.log(`[local-db] Sync log archived to ${archivePath}`);
 }
 
 // ── Sync Log ──────────────────────────────────────────────────────────────
@@ -49,11 +75,13 @@ function writeJsonFile(filePath, data) {
  *   timestamp      — ISO string
  *   productCode    — searched identifier
  *   result         — 'FOUND' | 'NOT_FOUND' | 'VALIDATION_FAILED' | 'ERROR'
- *   fieldsImported — number of mapped fields imported (or 0)
+ *   fields         — mapped product (or null)
  *   error          — error message string (or '')
+ *   source         — 'apiResp' for API-RESP imports (absent for CSV)
  */
 export function insertSyncLog(entry) {
   ensureDataDir();
+  rotateSyncLogIfNeeded();
   const log = readJsonFile(SYNC_LOG_FILE, []);
   log.push({
     id: `${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
@@ -68,11 +96,15 @@ export function insertSyncLog(entry) {
  * @param {object} opts
  * @param {number} [opts.page=1]   1-based page number
  * @param {number} [opts.limit=20] entries per page
+ * @param {string} [opts.source]   'apiResp' | 'csv' — filtra por origen
  * @returns {{ entries: object[], total: number, page: number, totalPages: number }}
  */
-export function getSyncLog({ page = 1, limit = 20 } = {}) {
-  const log    = readJsonFile(SYNC_LOG_FILE, []);
-  const sorted = [...log].reverse();          // newest first
+export function getSyncLog({ page = 1, limit = 20, source } = {}) {
+  let log = readJsonFile(SYNC_LOG_FILE, []);
+  if (source === 'apiResp') log = log.filter(e => e.source === 'apiResp');
+  if (source === 'csv')     log = log.filter(e => e.source !== 'apiResp');
+
+  const sorted     = [...log].reverse();          // newest first
   const total      = sorted.length;
   const totalPages = Math.max(1, Math.ceil(total / limit));
   const safePage   = Math.min(Math.max(1, page), totalPages);
@@ -85,7 +117,7 @@ export function getSyncLog({ page = 1, limit = 20 } = {}) {
 
 /**
  * Insert or update a product in data/products.json.
- * Keyed by productCode for O(1) lookup.
+ * Keyed by productCode.
  */
 export function upsertProduct({ productCode, data }) {
   ensureDataDir();
@@ -95,13 +127,4 @@ export function upsertProduct({ productCode, data }) {
     _updatedAt: new Date().toISOString()
   };
   writeJsonFile(PRODUCTS_FILE, cache);
-}
-
-/**
- * Get a cached product by code.
- * Returns null if not found.
- */
-export function getProduct(productCode) {
-  const cache = readJsonFile(PRODUCTS_FILE, {});
-  return cache[String(productCode)] || null;
 }
